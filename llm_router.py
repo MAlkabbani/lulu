@@ -68,9 +68,12 @@ class HybridRouter:
                     bypassed_llm=True,
                 )
 
-            self.memory_manager.upsert_memory(payload, source="explicit")
+            save_result = self.memory_manager.upsert_memory(payload, source="explicit")
+            reply_text = "Information explicitly saved to vault."
+            if save_result.action == "updated":
+                reply_text = "Information explicitly updated in vault."
             return RouteResult(
-                reply_text="Information explicitly saved to vault.",
+                reply_text=reply_text,
                 memory_hits=[],
                 saved_items=[payload],
                 bypassed_llm=True,
@@ -139,13 +142,13 @@ class HybridRouter:
             try:
                 arguments = self._parse_arguments(function_payload.get("arguments"))
                 fact = self._validate_fact(arguments.get("fact"))
-                self.memory_manager.upsert_memory(fact, source="tool_call")
+                save_result = self.memory_manager.upsert_memory(fact, source="tool_call")
                 saved_items.append(fact)
                 tool_messages.append(
                     {
                         "role": "tool",
                         "tool_name": "save_to_memory",
-                        "content": f"Saved memory: {fact}",
+                        "content": save_result.to_tool_message(),
                     }
                 )
             except Exception as exc:

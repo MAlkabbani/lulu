@@ -26,21 +26,32 @@ Lulu will:
 
 1. Skip the chat model
 2. Embed the payload with `nomic-embed-text`
-3. Save it to ChromaDB
-4. Confirm with speech: `Information explicitly saved to vault.`
+3. Deduplicate semantically against existing canonical memories
+4. Assign 1-3 backend tags locally
+5. Insert or update the canonical memory in ChromaDB
+6. Confirm with speech: `Information explicitly saved to vault.`
 
 ### 2. Autonomous Chat + Tool-Calling Memory
 
 For normal speech, Lulu will:
 
 1. Query ChromaDB for the top 3 relevant memories
-2. Inject those memories into the system prompt
+2. Inject those memories, including their backend tags, into the system prompt
 3. Call Ollama `POST /api/chat` with a JSON-schema tool named `save_to_memory`
 4. Let the model decide whether the user shared a durable fact worth remembering
 5. Save the fact natively in Python if the tool is called
 6. Generate a final spoken reply
 
 The router intentionally allows only one tool-execution round per turn to avoid recursive tool loops.
+
+### Canonical Memory Rules
+
+Lulu now stores long-term memory as canonical records:
+
+- semantic near-duplicates update the existing record instead of creating noisy copies
+- backend classification assigns 1-3 free-form tags such as `tea`, `preference`, `schedule`, or `dentist`
+- conflicting facts in the same semantic slot follow latest-wins behavior
+- recalled memories show both text and tags to the model for better context quality
 
 ## Architecture
 
@@ -149,6 +160,21 @@ This is useful for quick router and memory testing without live audio:
 python main.py --text-input
 ```
 
+### Memory inspection mode
+
+Use the text-mode sanity script to inspect stored canonical memories without modifying the database:
+
+```bash
+python scripts/memory_inspect.py --limit 10
+python scripts/memory_inspect.py --query "What tea do I like?" --limit 3 --show-metadata
+```
+
+This is useful for checking:
+
+- whether a repeated fact was merged instead of duplicated
+- what backend tags were assigned
+- which memory a semantic query would recall
+
 ## Environment Variables
 
 You can override defaults without changing code:
@@ -163,6 +189,10 @@ export CHROMA_COLLECTION="lulu_memory"
 export VAD_THRESHOLD="0.015"
 export VAD_SILENCE_SECONDS="1.0"
 export TOP_K_MEMORIES="3"
+export MEMORY_DEDUP_SIMILARITY_THRESHOLD="0.92"
+export MEMORY_DEDUP_QUERY_K="3"
+export MEMORY_MAX_TAGS="3"
+export MEMORY_TAG_CLASSIFIER_MODEL=""
 ```
 
 ## Important Implementation Notes
@@ -211,6 +241,8 @@ Then the Python app replies with a tool message:
 - Only one tool round is executed per user turn
 - Tool arguments must be a JSON object
 - `fact` must be a non-empty string within a configurable max length
+- Memory deduplication uses a configurable semantic threshold and keeps one canonical active record
+- Backend tag classification is validated in Python and falls back to `general` on parse failures
 - Retrieved memory is treated as untrusted context, not executable instruction text
 - TTS uses the native `say` binary through `subprocess.run([...])` instead of shell-interpolating model output
 
@@ -236,8 +268,8 @@ pytest -q
 - Replace macOS `say` with a higher-quality local TTS engine
 - Add a wake word and continuous VAD mode
 - Stream partial LLM output to chunked TTS playback
-- Add memory deduplication and confidence scoring
-- Add structured memory categories such as profile, preferences, and calendar facts
+- Add memory confidence scoring
+- Add richer structured memory taxonomies or human-reviewed conflict resolution
 
 ## Troubleshooting
 
