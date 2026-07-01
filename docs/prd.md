@@ -529,7 +529,7 @@ These metrics formalize product outcomes that were implicit in the implementatio
 
 - Requirements traceability: all shipped core workflows are represented in this PRD and in sequence diagrams.
 - Documentation accessibility: the PRD and decision log are linked from the top-level documentation surface.
-- Focused validation: regression tests cover router behavior, memory semantics, streaming TTS, and continuous-listening edge cases.
+- Focused validation: regression tests cover router behavior, memory semantics, streaming TTS, continuous-listening edge cases, and dependency-failure handling for startup, capture, transcription, streaming, and TTS boundaries.
 
 ## 12. Risks, Constraints, And Tradeoffs
 

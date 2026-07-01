@@ -1,16 +1,27 @@
 from __future__ import annotations
 
 from collections import deque
+import numpy as np
 
-from audio_handler import AudioHandler, WakeMatch, text_similarity
+from audio_handler import (
+    AudioCaptureError,
+    AudioHandler,
+    AudioTranscriptionError,
+    WakeMatch,
+    text_similarity,
+)
 from config import Settings
 from main import (
+    _bootstrap_connection,
+    _capture_audio,
     _cooldown_active,
     _remaining_window,
     _should_suppress_self_audio_echo,
+    _transcribe_audio,
     _window_active,
     parse_args,
 )
+from ollama_client import OllamaClientError
 from terminal_ui import TerminalUI
 
 
@@ -208,3 +219,49 @@ def test_terminal_ui_records_rejected_wake_attempt_counters() -> None:
 
     assert ui.state.rejected_wake_attempts == 1
     assert ui.state.wake_score_buckets["<0.50"] == 1
+
+
+def test_bootstrap_connection_reports_startup_failure_when_ollama_is_down() -> None:
+    class FailingOllamaClient:
+        def healthcheck(self):  # noqa: ANN202
+            raise OllamaClientError("Unable to reach Ollama at http://localhost:11434.")
+
+    ui = TerminalUI(build_settings())
+
+    ready = _bootstrap_connection(FailingOllamaClient(), ui, text_input_mode=False)
+
+    assert ready is False
+    assert ui.state.mode == "startup_error"
+    assert "Ollama startup check failed" in ui.state.status_line
+
+
+def test_capture_audio_reports_dependency_error_on_microphone_failure() -> None:
+    ui = TerminalUI(build_settings())
+
+    def fail_capture() -> None:
+        raise AudioCaptureError("microphone permission missing")
+
+    audio, capture_failed = _capture_audio(fail_capture, ui)
+
+    assert audio is None
+    assert capture_failed is True
+    assert ui.state.mode == "capture_error"
+    assert "microphone permission missing" in ui.state.status_line
+
+
+def test_transcribe_audio_reports_dependency_error_on_whisper_failure() -> None:
+    class FailingAudioHandler:
+        def transcribe_audio(self, audio: np.ndarray) -> str:
+            raise AudioTranscriptionError("mlx whisper model load failed")
+
+    ui = TerminalUI(build_settings())
+
+    transcript = _transcribe_audio(
+        FailingAudioHandler(),
+        ui,
+        np.zeros(160, dtype=np.float32),
+    )
+
+    assert transcript == ""
+    assert ui.state.mode == "stt_error"
+    assert "mlx whisper model load failed" in ui.state.status_line

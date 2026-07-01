@@ -9,34 +9,47 @@ import requests
 from config import Settings
 
 
+class OllamaClientError(RuntimeError):
+    """Raised when local Ollama transport or payload handling fails."""
+
+
 class OllamaClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.session = requests.Session()
 
     def healthcheck(self) -> dict[str, Any]:
-        response = self.session.get(
-            f"{self.settings.ollama_base_url}/api/version",
-            timeout=10,
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = self.session.get(
+                f"{self.settings.ollama_base_url}/api/version",
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise OllamaClientError(
+                f"Unable to reach Ollama at {self.settings.ollama_base_url}."
+            ) from exc
 
     def embed_text(self, text: str) -> list[float]:
-        response = self.session.post(
-            f"{self.settings.ollama_base_url}/api/embed",
-            json={
-                "model": self.settings.embedding_model,
-                "input": text,
-                "truncate": True,
-            },
-            timeout=self.settings.ollama_timeout_seconds,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response = self.session.post(
+                f"{self.settings.ollama_base_url}/api/embed",
+                json={
+                    "model": self.settings.embedding_model,
+                    "input": text,
+                    "truncate": True,
+                },
+                timeout=self.settings.ollama_timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise OllamaClientError("Ollama embedding request failed.") from exc
+
         embeddings = payload.get("embeddings") or []
         if not embeddings:
-            raise RuntimeError("Ollama returned no embeddings.")
+            raise OllamaClientError("Ollama returned no embeddings.")
         return embeddings[0]
 
     def chat(
@@ -56,36 +69,49 @@ class OllamaClient:
         if options:
             payload["options"] = options
 
-        response = self.session.post(
-            f"{self.settings.ollama_base_url}/api/chat",
-            json=payload,
-            timeout=self.settings.ollama_timeout_seconds,
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = self.session.post(
+                f"{self.settings.ollama_base_url}/api/chat",
+                json=payload,
+                timeout=self.settings.ollama_timeout_seconds,
+            )
+            response.raise_for_status()
+            return response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise OllamaClientError("Ollama chat request failed.") from exc
 
     def stream_chat(self, messages: list[dict[str, Any]]) -> Iterator[str]:
-        response = self.session.post(
-            f"{self.settings.ollama_base_url}/api/chat",
-            json={
-                "model": self.settings.chat_model,
-                "messages": messages,
-                "stream": True,
-            },
-            timeout=self.settings.ollama_timeout_seconds,
-            stream=True,
-        )
-        response.raise_for_status()
+        try:
+            response = self.session.post(
+                f"{self.settings.ollama_base_url}/api/chat",
+                json={
+                    "model": self.settings.chat_model,
+                    "messages": messages,
+                    "stream": True,
+                },
+                timeout=self.settings.ollama_timeout_seconds,
+                stream=True,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise OllamaClientError("Ollama streaming request failed.") from exc
 
-        for raw_line in response.iter_lines():
-            if not raw_line:
-                continue
-            chunk = json.loads(raw_line.decode("utf-8"))
-            message = chunk.get("message") or {}
-            content = message.get("content")
-            if content:
-                yield content
-        response.close()
+        try:
+            for raw_line in response.iter_lines():
+                if not raw_line:
+                    continue
+                try:
+                    chunk = json.loads(raw_line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise OllamaClientError("Ollama returned an invalid streaming payload.") from exc
+                message = chunk.get("message") or {}
+                content = message.get("content")
+                if content:
+                    yield content
+        except requests.RequestException as exc:
+            raise OllamaClientError("Ollama streaming connection failed mid-response.") from exc
+        finally:
+            response.close()
 
     @staticmethod
     def normalize_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:

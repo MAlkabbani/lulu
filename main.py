@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from time import perf_counter, sleep
 
-from audio_handler import AudioHandler, MacOSTTS, PhraseChunker, text_similarity
+from audio_handler import (
+    AudioCaptureError,
+    AudioHandler,
+    AudioTranscriptionError,
+    MacOSTTS,
+    PhraseChunker,
+    TTSPlaybackError,
+    text_similarity,
+)
 from config import Settings
 from llm_router import HybridRouter
 from memory_manager import MemoryManager
-from ollama_client import OllamaClient
+from ollama_client import OllamaClient, OllamaClientError
 from terminal_ui import TerminalUI
 
 
@@ -43,14 +51,15 @@ def main() -> None:
         recent_spoken_chunks.append((chunk, perf_counter()))
         ui.record_spoken_chunk(chunk)
 
+    def on_chunk_error(error: TTSPlaybackError) -> None:
+        ui.show_dependency_error("tts_error", f"Speech playback failed: {error}")
+
     tts.set_on_chunk_spoken(on_chunk_spoken)
+    tts.set_on_chunk_error(on_chunk_error)
 
     ui.start()
-    version = ollama_client.healthcheck()
-    ui.set_connection(
-        version=str(version.get("version", "unknown")),
-        text_input_mode=args.text_input,
-    )
+    if not _bootstrap_connection(ollama_client, ui, args.text_input):
+        return
     if args.text_input:
         ui.set_runtime_mode("text")
     elif args.turn_based or not settings.continuous_listening_enabled:
@@ -77,6 +86,14 @@ def main() -> None:
             _run_turn_based_voice_loop(settings, audio_handler, router, ollama_client, tts, ui)
     except KeyboardInterrupt:
         print("\nGoodbye.")
+    except Exception as exc:
+        _handle_dependency_failure(
+            ui,
+            "runtime_error",
+            "Lulu stopped due to an unexpected runtime failure",
+            exc,
+            recoverable=False,
+        )
     finally:
         tts.close()
         ui.stop()
@@ -120,9 +137,10 @@ def _run_turn_based_voice_loop(
         ui.set_cooldown_remaining(None)
         ui.set_mode("listening", "Listening for speech...")
         ui.log_event("Listening for speech.")
-        capture_start = perf_counter()
-        audio = audio_handler.record_until_silence()
-        ui.record_latency("capture", perf_counter() - capture_start)
+        audio, capture_failed = _capture_audio(audio_handler.record_until_silence, ui)
+        if capture_failed:
+            ui.set_mode("idle", "Waiting for microphone recovery.")
+            continue
         if audio is None:
             ui.log_event("No speech detected during capture.")
             ui.set_mode("idle", "No speech detected. Waiting again.")
@@ -182,9 +200,10 @@ def _run_continuous_voice_loop(
                 "conversation_window",
                 f"Conversation window active: {remaining:.1f}s remaining",
             )
-            capture_start = perf_counter()
-            audio = audio_handler.record_until_silence()
-            ui.record_latency("capture", perf_counter() - capture_start)
+            audio, capture_failed = _capture_audio(audio_handler.record_until_silence, ui)
+            if capture_failed:
+                sleep(0.2)
+                continue
             if audio is None:
                 if not _window_active(perf_counter(), conversation_deadline):
                     ui.log_event("Conversation window expired. Returning to passive listening.")
@@ -222,9 +241,10 @@ def _run_continuous_voice_loop(
 
         ui.set_conversation_window_remaining(None)
         ui.set_mode("passive_listening", f"Waiting for '{settings.wake_phrase}'...")
-        capture_start = perf_counter()
-        audio = audio_handler.record_wake_scan()
-        ui.record_latency("capture", perf_counter() - capture_start)
+        audio, capture_failed = _capture_audio(audio_handler.record_wake_scan, ui)
+        if capture_failed:
+            sleep(0.2)
+            continue
         if audio is None:
             continue
 
@@ -313,9 +333,63 @@ def _transcribe_audio(
         ui.log_event("Captured audio. Starting transcription.")
 
     stt_start = perf_counter()
-    transcript = audio_handler.transcribe_audio(audio)
+    try:
+        transcript = audio_handler.transcribe_audio(audio)
+    except AudioTranscriptionError as exc:
+        ui.record_latency("stt", perf_counter() - stt_start)
+        _handle_dependency_failure(ui, "stt_error", "Transcription failed", exc)
+        return ""
     ui.record_latency("stt", perf_counter() - stt_start)
     return transcript
+
+
+def _bootstrap_connection(
+    ollama_client: OllamaClient,
+    ui: TerminalUI,
+    text_input_mode: bool,
+) -> bool:
+    try:
+        version = ollama_client.healthcheck()
+    except OllamaClientError as exc:
+        ui.show_startup_failure(f"Ollama startup check failed: {exc}")
+        return False
+
+    ui.set_connection(
+        version=str(version.get("version", "unknown")),
+        text_input_mode=text_input_mode,
+    )
+    return True
+
+
+def _capture_audio(
+    capture_fn: Callable[[], object | None],
+    ui: TerminalUI,
+) -> tuple[object | None, bool]:
+    capture_start = perf_counter()
+    try:
+        audio = capture_fn()
+    except AudioCaptureError as exc:
+        ui.record_latency("capture", perf_counter() - capture_start)
+        _handle_dependency_failure(ui, "capture_error", "Microphone capture failed", exc)
+        return None, True
+
+    ui.record_latency("capture", perf_counter() - capture_start)
+    return audio, False
+
+
+def _handle_dependency_failure(
+    ui: TerminalUI,
+    mode: str,
+    prefix: str,
+    exc: Exception,
+    recoverable: bool = True,
+) -> None:
+    detail = str(exc).strip()
+    message = f"{prefix}: {detail}" if detail else prefix
+    if recoverable:
+        ui.show_dependency_error(mode, message)
+        return
+    ui.show_startup_failure(message)
 
 
 def _process_transcript_turn(
@@ -333,7 +407,13 @@ def _process_transcript_turn(
     ui.set_mode("thinking", "Querying memory and generating a reply...")
     ui.log_event("Running memory recall and router.")
     router_start = perf_counter()
-    prepared = router.prepare_turn(transcript)
+    try:
+        prepared = router.prepare_turn(transcript)
+    except Exception as exc:
+        ui.record_latency("router", perf_counter() - router_start)
+        ui.record_latency("total", perf_counter() - turn_start)
+        _handle_dependency_failure(ui, "router_error", "Turn preparation failed", exc)
+        return
     ui.record_latency("router", perf_counter() - router_start)
     ui.set_memory_hits(len(prepared.memory_hits))
     ui.log_event(f"Retrieved {len(prepared.memory_hits)} memory hit(s).")
@@ -361,18 +441,29 @@ def _process_transcript_turn(
         ui.log_event("Streaming fixed reply through chunked TTS.")
         stream_source = iter([prepared.fixed_reply])
 
-    for piece in _stream_and_chunk(
-        stream_source=stream_source,
-        chunker=chunker,
-        tts=tts,
-        ui=ui,
-        response_parts=response_parts,
-    ):
-        if not first_token_recorded and piece.strip():
-            ui.record_latency("first_token", perf_counter() - stream_start)
-            first_token_recorded = True
-        if speech_start is None and response_parts:
-            speech_start = perf_counter()
+    try:
+        for piece in _stream_and_chunk(
+            stream_source=stream_source,
+            chunker=chunker,
+            tts=tts,
+            ui=ui,
+            response_parts=response_parts,
+        ):
+            if not first_token_recorded and piece.strip():
+                ui.record_latency("first_token", perf_counter() - stream_start)
+                first_token_recorded = True
+            if speech_start is None and response_parts:
+                speech_start = perf_counter()
+    except Exception as exc:
+        final_text = "".join(response_parts).strip()
+        if final_text:
+            ui.set_response(final_text)
+            ui.log_event("Preserved partial response text after stream failure.")
+        tts.finish_turn()
+        ui.record_latency("stream_total", perf_counter() - stream_start)
+        ui.record_latency("total", perf_counter() - turn_start)
+        _handle_dependency_failure(ui, "stream_error", "Response streaming failed", exc)
+        return
 
     final_text = "".join(response_parts).strip()
     if not final_text:
@@ -385,11 +476,20 @@ def _process_transcript_turn(
 
     ui.set_response(final_text)
     ui.set_mode("speaking", "Waiting for queued speech chunks to finish...")
-    tts.finish_turn()
+    tts_errors = tts.finish_turn()
     if speech_start is not None:
         ui.record_latency("tts", perf_counter() - speech_start)
     ui.record_latency("stream_total", perf_counter() - stream_start)
     ui.record_latency("total", perf_counter() - turn_start)
+    if tts_errors:
+        ui.log_event("Retained final text response despite TTS playback failure.")
+        _handle_dependency_failure(
+            ui,
+            "tts_error",
+            "Speech playback completed with errors",
+            tts_errors[0],
+        )
+        return
     ui.log_event("Finished streamed playback.")
     ui.set_mode("ready", "Turn complete. Waiting for the next turn.")
 

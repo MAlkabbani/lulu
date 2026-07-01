@@ -289,6 +289,8 @@ Replies now stream into speech in phrase-sized chunks, so Lulu can begin talking
 
 While Lulu is speaking and briefly afterward, wake detection enters a software cooldown so the assistant does not immediately retrigger on its own TTS output. Lulu also applies a lightweight transcript-similarity guard for a short post-speech window to suppress likely self-audio echoes by comparing wake-scan transcripts against the recent final reply and recently spoken chunks.
 
+If a core local dependency fails during startup or a turn, Lulu now surfaces a degraded but explicit operator-visible state in the dashboard instead of failing silently. Startup Ollama failures stop the app with a clear status line, while capture, transcription, streaming, and TTS failures remain visible in the event log and status panel so you can troubleshoot without losing the current text response.
+
 ### Text-input mode
 
 This is useful for quick router and memory testing without live audio:
@@ -407,6 +409,8 @@ Run the focused test suite:
 
 ```bash
 pytest -q
+# or, if pytest is not on your PATH:
+python -m pytest -q
 ```
 
 ## Tuning Tips For M1
@@ -518,20 +522,51 @@ command -v ollama || echo "ollama not found"
 
 ### `Connection refused` from Ollama
 
-Start Ollama:
+Lulu now reports this as an explicit startup error in the dashboard. Start Ollama:
 
 ```bash
 ollama serve
 ```
 
+Then rerun:
+
+```bash
+python main.py
+```
+
 ### `PortAudio` or input stream errors
 
-Reinstall audio dependencies:
+Lulu now keeps the failure visible in the dashboard instead of crashing the voice loop. Reinstall audio dependencies:
 
 ```bash
 brew install portaudio
 pip install --force-reinstall sounddevice
 ```
+
+Then verify that the terminal or IDE host app still has microphone permission in macOS.
+
+### Whisper transcription failures
+
+If MLX Whisper fails to load or transcribe, Lulu reports the turn as a transcription error and returns to an operator-visible degraded state.
+
+Try the smaller model first:
+
+```bash
+export MLX_WHISPER_MODEL="mlx-community/whisper-tiny-mlx"
+python main.py --turn-based
+```
+
+### TTS playback fails or text appears without speech
+
+Lulu now preserves the final text response in the dashboard even if macOS `say` fails for one or more chunks.
+
+Check that `say` works directly:
+
+```bash
+say "Lulu speech check"
+```
+
+If that fails, the local macOS speech subsystem needs attention before live voice testing.
 
 ### Whisper is too slow
 
