@@ -23,8 +23,9 @@ from config import Settings
 class WakeMatch:
     matched: bool
     remainder: str = ""
-
-WAKE_SCORE_THRESHOLD = 0.86
+    score: float = 0.0
+    matched_prefix: str = ""
+    reason: str = ""
 
 
 class PhraseChunker:
@@ -243,12 +244,14 @@ class AudioHandler:
         normalized = normalize_text(transcript)
         wake_phrase = normalize_text(self.settings.wake_phrase)
         if not normalized or not wake_phrase:
-            return WakeMatch(matched=False)
+            return WakeMatch(matched=False, reason="empty")
 
-        match = score_wake_phrase_match(normalized, wake_phrase)
-        if match is not None:
-            return match
-        return WakeMatch(matched=False)
+        score_result = score_wake_phrase_match(
+            transcript=normalized,
+            wake_phrase=wake_phrase,
+            threshold=self.settings.wake_match_score_threshold,
+        )
+        return score_result
 
     def _write_temp_wav(self, audio: np.ndarray) -> Path:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -269,28 +272,47 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", lowered).strip()
 
 
-def score_wake_phrase_match(transcript: str, wake_phrase: str) -> WakeMatch | None:
+def score_wake_phrase_match(
+    transcript: str,
+    wake_phrase: str,
+    threshold: float,
+) -> WakeMatch:
     wake_tokens = wake_phrase.split()
     transcript_tokens = transcript.split()
     if len(transcript_tokens) < len(wake_tokens):
-        return None
+        return WakeMatch(matched=False, reason="too-short")
 
     best_score = 0.0
     best_prefix_length = 0
+    best_prefix_text = ""
 
-    for prefix_length in range(len(wake_tokens), min(len(transcript_tokens), len(wake_tokens) + 1) + 1):
+    for prefix_length in range(
+        len(wake_tokens), min(len(transcript_tokens), len(wake_tokens) + 1) + 1
+    ):
         prefix_tokens = transcript_tokens[:prefix_length]
         prefix_text = " ".join(prefix_tokens)
         score = _wake_similarity_score(prefix_text, wake_phrase)
         if score > best_score:
             best_score = score
             best_prefix_length = prefix_length
+            best_prefix_text = prefix_text
 
-    if best_score < WAKE_SCORE_THRESHOLD:
-        return None
+    if best_score < threshold:
+        return WakeMatch(
+            matched=False,
+            score=best_score,
+            matched_prefix=best_prefix_text,
+            reason="below-threshold",
+        )
 
     remainder = " ".join(transcript_tokens[best_prefix_length:]).strip()
-    return WakeMatch(matched=True, remainder=remainder)
+    return WakeMatch(
+        matched=True,
+        remainder=remainder,
+        score=best_score,
+        matched_prefix=best_prefix_text,
+        reason="score-match",
+    )
 
 
 def _wake_similarity_score(candidate: str, target: str) -> float:
@@ -310,6 +332,14 @@ def _wake_similarity_score(candidate: str, target: str) -> float:
         token_penalty += 0.03
 
     return max(0.0, raw_score - token_penalty)
+
+
+def text_similarity(left: str, right: str) -> float:
+    normalized_left = normalize_text(left)
+    normalized_right = normalize_text(right)
+    if not normalized_left or not normalized_right:
+        return 0.0
+    return SequenceMatcher(None, normalized_left, normalized_right).ratio()
 
 
 def _wake_signature(text: str) -> str:

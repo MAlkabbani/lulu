@@ -48,6 +48,13 @@ class Settings:
         os.getenv("CONVERSATION_WINDOW_SECONDS", "12.0")
     )
     wake_cooldown_seconds: float = float(os.getenv("WAKE_COOLDOWN_SECONDS", "1.2"))
+    self_audio_guard_seconds: float = float(os.getenv("SELF_AUDIO_GUARD_SECONDS", "8.0"))
+    self_audio_similarity_threshold: float = float(
+        os.getenv("SELF_AUDIO_SIMILARITY_THRESHOLD", "0.74")
+    )
+    wake_match_score_threshold: float = float(
+        os.getenv("WAKE_MATCH_SCORE_THRESHOLD", "0.86")
+    )
     continuous_listening_enabled: bool = os.getenv(
         "CONTINUOUS_LISTENING_ENABLED", "true"
     ).lower() in {"1", "true", "yes", "on"}

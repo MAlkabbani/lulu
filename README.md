@@ -162,6 +162,7 @@ The terminal now shows a small live dashboard with:
 
 - current assistant mode such as `passive_listening`, `conversation_window`, `thinking`, and `speaking`
 - a visible runtime badge showing `CONTINUOUS`, `TURN-BASED`, or `TEXT`
+- a wake debug panel with the current score threshold, accepted/rejected counters, score bins, and recent accepted/rejected wake attempts
 - latest transcript and spoken response
 - recent memory saves
 - a recent-turn event log for capture, transcription, recall, save, and response milestones
@@ -169,7 +170,7 @@ The terminal now shows a small live dashboard with:
 
 Replies now stream into speech in phrase-sized chunks, so Lulu can begin talking before the full response is complete. This phrase-boundary policy favors lower latency today, but it may sound choppier than sentence-sized chunks and is intentionally isolated so it can be swapped later if user testing prefers smoother playback.
 
-While Lulu is speaking and briefly afterward, wake detection enters a software cooldown so the assistant does not immediately retrigger on its own TTS output.
+While Lulu is speaking and briefly afterward, wake detection enters a software cooldown so the assistant does not immediately retrigger on its own TTS output. Lulu also applies a lightweight transcript-similarity guard for a short post-speech window to suppress likely self-audio echoes by comparing wake-scan transcripts against the recent final reply and recently spoken chunks.
 
 ### Text-input mode
 
@@ -225,6 +226,9 @@ export WAKE_SCAN_MAX_RECORD_SECONDS="2.0"
 export WAKE_SCAN_MIN_SPEECH_SECONDS="0.20"
 export CONVERSATION_WINDOW_SECONDS="12.0"
 export WAKE_COOLDOWN_SECONDS="1.2"
+export SELF_AUDIO_GUARD_SECONDS="8.0"
+export SELF_AUDIO_SIMILARITY_THRESHOLD="0.74"
+export WAKE_MATCH_SCORE_THRESHOLD="0.86"
 export CONTINUOUS_LISTENING_ENABLED="true"
 ```
 

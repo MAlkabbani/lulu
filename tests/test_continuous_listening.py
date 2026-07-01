@@ -1,8 +1,16 @@
 from __future__ import annotations
 
-from audio_handler import AudioHandler, WakeMatch
+from collections import deque
+
+from audio_handler import AudioHandler, WakeMatch, text_similarity
 from config import Settings
-from main import _cooldown_active, _remaining_window, _window_active, parse_args
+from main import (
+    _cooldown_active,
+    _remaining_window,
+    _should_suppress_self_audio_echo,
+    _window_active,
+    parse_args,
+)
 from terminal_ui import TerminalUI
 
 
@@ -11,6 +19,9 @@ def build_settings() -> Settings:
         wake_phrase="hey lulu",
         conversation_window_seconds=12.0,
         wake_cooldown_seconds=1.2,
+        self_audio_guard_seconds=8.0,
+        self_audio_similarity_threshold=0.74,
+        wake_match_score_threshold=0.86,
     )
 
 
@@ -19,7 +30,9 @@ def test_match_wake_phrase_accepts_bare_phrase() -> None:
 
     result = handler.match_wake_phrase("hey lulu")
 
-    assert result == WakeMatch(matched=True, remainder="")
+    assert result.matched is True
+    assert result.remainder == ""
+    assert result.score >= 0.99
 
 
 def test_match_wake_phrase_extracts_inline_request() -> None:
@@ -38,6 +51,7 @@ def test_match_wake_phrase_accepts_common_whisper_variant() -> None:
 
     assert result.matched is True
     assert result.remainder == "play some jazz"
+    assert result.score >= 0.86
 
 
 def test_match_wake_phrase_accepts_scored_whisper_confusion() -> None:
@@ -47,6 +61,7 @@ def test_match_wake_phrase_accepts_scored_whisper_confusion() -> None:
 
     assert result.matched is True
     assert result.remainder == "set a timer"
+    assert result.score >= 0.86
 
 
 def test_match_wake_phrase_rejects_non_wake_transcript() -> None:
@@ -54,7 +69,8 @@ def test_match_wake_phrase_rejects_non_wake_transcript() -> None:
 
     result = handler.match_wake_phrase("what time is it")
 
-    assert result == WakeMatch(matched=False, remainder="")
+    assert result.matched is False
+    assert result.reason in {"below-threshold", "too-short"}
 
 
 def test_match_wake_phrase_rejects_close_but_unlisted_phrase() -> None:
@@ -62,7 +78,8 @@ def test_match_wake_phrase_rejects_close_but_unlisted_phrase() -> None:
 
     result = handler.match_wake_phrase("hey luma what's up")
 
-    assert result == WakeMatch(matched=False, remainder="")
+    assert result.matched is False
+    assert result.score < 0.86
 
 
 def test_conversation_window_helpers_track_expiry() -> None:
@@ -97,3 +114,97 @@ def test_terminal_ui_runtime_badge_reflects_turn_based_mode() -> None:
     ui.set_runtime_mode("turn-based")
 
     assert ui._runtime_badge().plain == "TURN-BASED"
+
+
+def test_terminal_ui_records_recent_wake_attempts() -> None:
+    ui = TerminalUI(build_settings())
+
+    ui.record_wake_attempt(
+        transcript="hay lou lou set a timer",
+        score=0.91,
+        accepted=True,
+        reason="score-match",
+    )
+
+    assert ui.state.last_wake_score == 0.91
+    assert ui.state.last_wake_decision == "accepted (score-match)"
+    assert ui.state.recent_wake_attempts[0].startswith("ACCEPTED score=0.91")
+    assert ui.state.accepted_wake_attempts == 1
+    assert ui.state.wake_score_buckets["0.86-0.94"] == 1
+
+
+def test_self_audio_guard_suppresses_recent_similar_reply() -> None:
+    settings = build_settings()
+
+    result = _should_suppress_self_audio_echo(
+        transcript="I found your note and saved it to memory",
+        last_assistant_reply="I found your note and saved it to memory.",
+        last_assistant_reply_at=95.0,
+        recent_spoken_chunks=deque(),
+        now=100.0,
+        settings=settings,
+    )
+
+    assert result is True
+
+
+def test_self_audio_guard_ignores_old_or_dissimilar_reply() -> None:
+    settings = build_settings()
+
+    old_result = _should_suppress_self_audio_echo(
+        transcript="I found your note and saved it to memory",
+        last_assistant_reply="I found your note and saved it to memory.",
+        last_assistant_reply_at=80.0,
+        recent_spoken_chunks=deque(),
+        now=100.0,
+        settings=settings,
+    )
+    different_result = _should_suppress_self_audio_echo(
+        transcript="hey lulu what's the weather",
+        last_assistant_reply="I found your note and saved it to memory.",
+        last_assistant_reply_at=95.0,
+        recent_spoken_chunks=deque(),
+        now=100.0,
+        settings=settings,
+    )
+
+    assert old_result is False
+    assert different_result is False
+
+
+def test_text_similarity_normalizes_punctuation() -> None:
+    assert text_similarity("Hello, Lulu!", "hello lulu") >= 0.95
+
+
+def test_self_audio_guard_uses_recent_spoken_chunks() -> None:
+    settings = build_settings()
+
+    result = _should_suppress_self_audio_echo(
+        transcript="saved it to memory",
+        last_assistant_reply="Completely different final response",
+        last_assistant_reply_at=95.0,
+        recent_spoken_chunks=deque(
+            [
+                ("I found your note", 96.0),
+                ("saved it to memory", 98.0),
+            ]
+        ),
+        now=100.0,
+        settings=settings,
+    )
+
+    assert result is True
+
+
+def test_terminal_ui_records_rejected_wake_attempt_counters() -> None:
+    ui = TerminalUI(build_settings())
+
+    ui.record_wake_attempt(
+        transcript="hello there",
+        score=0.42,
+        accepted=False,
+        reason="below-threshold",
+    )
+
+    assert ui.state.rejected_wake_attempts == 1
+    assert ui.state.wake_score_buckets["<0.50"] == 1

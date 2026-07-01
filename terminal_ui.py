@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections import Counter
 from dataclasses import dataclass, field
 
 from rich.columns import Columns
@@ -25,12 +26,19 @@ class UIState:
     spoken_chunk_count: int = 0
     recent_saves: deque[str] = field(default_factory=lambda: deque(maxlen=5))
     recent_events: deque[str] = field(default_factory=lambda: deque(maxlen=10))
+    recent_wake_attempts: deque[str] = field(default_factory=lambda: deque(maxlen=6))
     latencies_ms: dict[str, float] = field(default_factory=dict)
     ollama_version: str = "unknown"
     text_input_mode: bool = False
     runtime_mode: str = "continuous"
     conversation_window_remaining: float | None = None
     cooldown_remaining: float | None = None
+    last_wake_score: float | None = None
+    last_wake_decision: str = "No wake attempts yet."
+    wake_score_threshold: float | None = None
+    accepted_wake_attempts: int = 0
+    rejected_wake_attempts: int = 0
+    wake_score_buckets: Counter[str] = field(default_factory=Counter)
 
 
 class TerminalUI:
@@ -58,6 +66,7 @@ class TerminalUI:
     def set_connection(self, version: str, text_input_mode: bool) -> None:
         self.state.ollama_version = version
         self.state.text_input_mode = text_input_mode
+        self.state.wake_score_threshold = self.settings.wake_match_score_threshold
         self.state.status_line = f"{self.settings.app_name} is ready. Press Ctrl+C to stop."
         self.state.mode = "ready"
         self.log_event(f"Connected to Ollama {version}")
@@ -119,6 +128,28 @@ class TerminalUI:
         self.state.cooldown_remaining = seconds
         self.refresh()
 
+    def record_wake_attempt(
+        self,
+        transcript: str,
+        score: float,
+        accepted: bool,
+        reason: str,
+    ) -> None:
+        label = "accepted" if accepted else "rejected"
+        self.state.last_wake_score = score
+        self.state.last_wake_decision = f"{label} ({reason})"
+        if accepted:
+            self.state.accepted_wake_attempts += 1
+        else:
+            self.state.rejected_wake_attempts += 1
+        self.state.wake_score_buckets[self._bucket_label(score)] += 1
+        attempt = (
+            f"{label.upper()} score={score:.2f} "
+            f"reason={reason} text={self._truncate(transcript, limit=42)}"
+        )
+        self.state.recent_wake_attempts.appendleft(attempt)
+        self.refresh()
+
     def log_event(self, event: str, refresh: bool = True) -> None:
         self.state.recent_events.appendleft(event)
         if refresh:
@@ -146,6 +177,7 @@ class TerminalUI:
             [
                 Panel(self._render_status(), title="Status", expand=True),
                 Panel(self._render_latencies(), title="Latencies", expand=True),
+                Panel(self._render_wake_debug(), title="Wake Debug", expand=True),
             ],
             expand=True,
         )
@@ -185,6 +217,36 @@ class TerminalUI:
                 f"{self.state.cooldown_remaining:.1f}s",
             )
         table.add_row("State", self.state.status_line)
+        return table
+
+    def _render_wake_debug(self) -> Table:
+        table = Table.grid(padding=(0, 1))
+        threshold = self.state.wake_score_threshold
+        table.add_row(
+            "Threshold",
+            f"{threshold:.2f}" if threshold is not None else "n/a",
+        )
+        table.add_row(
+            "Last score",
+            f"{self.state.last_wake_score:.2f}"
+            if self.state.last_wake_score is not None
+            else "n/a",
+        )
+        table.add_row("Decision", self.state.last_wake_decision)
+        table.add_row(
+            "Accepted/Rejected",
+            f"{self.state.accepted_wake_attempts}/{self.state.rejected_wake_attempts}",
+        )
+        histogram = ", ".join(
+            f"{label}:{self.state.wake_score_buckets.get(label, 0)}"
+            for label in ("<0.50", "0.50-0.74", "0.75-0.85", "0.86-0.94", "0.95+")
+        )
+        table.add_row("Score bins", histogram)
+        if not self.state.recent_wake_attempts:
+            table.add_row("Attempts", "No wake attempts yet.")
+            return table
+        for index, attempt in enumerate(self.state.recent_wake_attempts, start=1):
+            table.add_row(f"Try {index}", attempt)
         return table
 
     def _render_latencies(self) -> Table:
@@ -237,3 +299,15 @@ class TerminalUI:
         if self.state.runtime_mode == "turn-based":
             return Text("TURN-BASED", style="bold yellow")
         return Text("CONTINUOUS", style="bold green")
+
+    @staticmethod
+    def _bucket_label(score: float) -> str:
+        if score < 0.50:
+            return "<0.50"
+        if score < 0.75:
+            return "0.50-0.74"
+        if score < 0.86:
+            return "0.75-0.85"
+        if score < 0.95:
+            return "0.86-0.94"
+        return "0.95+"

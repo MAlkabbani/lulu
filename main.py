@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 from collections.abc import Iterator
 from time import perf_counter, sleep
 
-from audio_handler import AudioHandler, MacOSTTS, PhraseChunker
+from audio_handler import AudioHandler, MacOSTTS, PhraseChunker, text_similarity
 from config import Settings
 from llm_router import HybridRouter
 from memory_manager import MemoryManager
@@ -36,7 +37,13 @@ def main() -> None:
     audio_handler = AudioHandler(settings)
     tts = MacOSTTS()
     ui = TerminalUI(settings)
-    tts.set_on_chunk_spoken(ui.record_spoken_chunk)
+    recent_spoken_chunks: deque[tuple[str, float]] = deque(maxlen=12)
+
+    def on_chunk_spoken(chunk: str) -> None:
+        recent_spoken_chunks.append((chunk, perf_counter()))
+        ui.record_spoken_chunk(chunk)
+
+    tts.set_on_chunk_spoken(on_chunk_spoken)
 
     ui.start()
     version = ollama_client.healthcheck()
@@ -57,7 +64,15 @@ def main() -> None:
         if args.text_input:
             _run_text_loop(settings, router, ollama_client, tts, ui)
         elif settings.continuous_listening_enabled and not args.turn_based:
-            _run_continuous_voice_loop(settings, audio_handler, router, ollama_client, tts, ui)
+            _run_continuous_voice_loop(
+                settings,
+                audio_handler,
+                router,
+                ollama_client,
+                tts,
+                ui,
+                recent_spoken_chunks,
+            )
         else:
             _run_turn_based_voice_loop(settings, audio_handler, router, ollama_client, tts, ui)
     except KeyboardInterrupt:
@@ -136,9 +151,12 @@ def _run_continuous_voice_loop(
     ollama_client: OllamaClient,
     tts: MacOSTTS,
     ui: TerminalUI,
+    recent_spoken_chunks: deque[tuple[str, float]],
 ) -> None:
     conversation_deadline: float | None = None
     cooldown_until = 0.0
+    last_assistant_reply = ""
+    last_assistant_reply_at = 0.0
     ui.log_event(f"Passive listening enabled. Waiting for '{settings.wake_phrase}'.")
 
     while True:
@@ -190,6 +208,9 @@ def _run_continuous_voice_loop(
                 tts=tts,
                 ui=ui,
             )
+            if ui.state.response:
+                last_assistant_reply = ui.state.response
+                last_assistant_reply_at = perf_counter()
             conversation_deadline = _next_conversation_deadline(settings)
             ui.set_conversation_window_remaining(settings.conversation_window_seconds)
             cooldown_until = perf_counter() + settings.wake_cooldown_seconds
@@ -212,10 +233,42 @@ def _run_continuous_voice_loop(
             continue
 
         wake_match = audio_handler.match_wake_phrase(transcript)
-        if not wake_match.matched:
-            ui.log_event(f"Ignored non-wake transcript: {transcript}")
+        if _should_suppress_self_audio_echo(
+            transcript=transcript,
+            last_assistant_reply=last_assistant_reply,
+            last_assistant_reply_at=last_assistant_reply_at,
+            recent_spoken_chunks=recent_spoken_chunks,
+            now=perf_counter(),
+            settings=settings,
+        ):
+            ui.record_wake_attempt(
+                transcript=transcript,
+                score=wake_match.score,
+                accepted=False,
+                reason="self-audio-guard",
+            )
+            ui.log_event("Rejected wake attempt due to self-audio guard.")
             continue
 
+        if not wake_match.matched:
+            ui.record_wake_attempt(
+                transcript=transcript,
+                score=wake_match.score,
+                accepted=False,
+                reason=wake_match.reason or "below-threshold",
+            )
+            ui.log_event("Rejected wake attempt below threshold.")
+            continue
+
+        ui.record_wake_attempt(
+            transcript=transcript,
+            score=wake_match.score,
+            accepted=True,
+            reason=wake_match.reason or "score-match",
+        )
+        ui.log_event(
+            f"Accepted wake attempt score={wake_match.score:.2f}: {wake_match.matched_prefix or settings.wake_phrase}"
+        )
         ui.log_event(f"Wake phrase detected: {settings.wake_phrase}")
         conversation_deadline = _next_conversation_deadline(settings)
         ui.set_conversation_window_remaining(settings.conversation_window_seconds)
@@ -230,6 +283,9 @@ def _run_continuous_voice_loop(
                 tts=tts,
                 ui=ui,
             )
+            if ui.state.response:
+                last_assistant_reply = ui.state.response
+                last_assistant_reply_at = perf_counter()
             conversation_deadline = _next_conversation_deadline(settings)
             ui.set_conversation_window_remaining(settings.conversation_window_seconds)
             cooldown_until = perf_counter() + settings.wake_cooldown_seconds
@@ -374,6 +430,32 @@ def _remaining_window(now: float, deadline: float | None) -> float | None:
 
 def _cooldown_active(now: float, cooldown_until: float) -> bool:
     return now < cooldown_until
+
+
+def _should_suppress_self_audio_echo(
+    transcript: str,
+    last_assistant_reply: str,
+    last_assistant_reply_at: float,
+    recent_spoken_chunks: deque[tuple[str, float]],
+    now: float,
+    settings: Settings,
+) -> bool:
+    reply_match = False
+    if last_assistant_reply and last_assistant_reply_at:
+        reply_match = (
+            now - last_assistant_reply_at <= settings.self_audio_guard_seconds
+            and text_similarity(transcript, last_assistant_reply)
+            >= settings.self_audio_similarity_threshold
+        )
+
+    chunk_threshold = max(settings.self_audio_similarity_threshold + 0.08, 0.86)
+    chunk_match = any(
+        now - spoken_at <= settings.self_audio_guard_seconds
+        and text_similarity(transcript, chunk_text) >= chunk_threshold
+        for chunk_text, spoken_at in recent_spoken_chunks
+    )
+
+    return reply_match or chunk_match
 
 
 if __name__ == "__main__":
