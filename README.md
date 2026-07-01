@@ -82,9 +82,13 @@ Microphone
 ├── main.py
 ├── memory_manager.py
 ├── ollama_client.py
+├── terminal_ui.py
 ├── requirements.txt
+├── scripts
+│   └── memory_inspect.py
 └── tests
-    └── test_llm_router.py
+    ├── test_llm_router.py
+    └── test_memory_manager.py
 ```
 
 ## Apple Silicon Setup
@@ -151,6 +155,14 @@ python main.py
 ```
 
 Lulu will open the microphone, wait for speech, stop on silence, transcribe locally, route the request, then speak the response.
+
+The terminal now shows a small live dashboard with:
+
+- current assistant mode such as `listening`, `transcribing`, `thinking`, and `speaking`
+- latest transcript and spoken response
+- recent memory saves
+- a recent-turn event log for capture, transcription, recall, save, and response milestones
+- per-turn latency snapshots for capture, STT, router, TTS, and total turn time
 
 ### Text-input mode
 
