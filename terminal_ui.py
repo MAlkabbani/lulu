@@ -21,6 +21,8 @@ class UIState:
     transcript: str = ""
     response: str = ""
     memory_hit_count: int = 0
+    emitted_chunk_count: int = 0
+    spoken_chunk_count: int = 0
     recent_saves: deque[str] = field(default_factory=lambda: deque(maxlen=5))
     recent_events: deque[str] = field(default_factory=lambda: deque(maxlen=10))
     latencies_ms: dict[str, float] = field(default_factory=dict)
@@ -86,6 +88,22 @@ class TerminalUI:
             self.log_event(f"Saved memory: {item}", refresh=False)
         self.refresh()
 
+    def record_emitted_chunk(self, chunk: str) -> None:
+        self.state.emitted_chunk_count += 1
+        self.log_event(
+            f"Emitted speech chunk {self.state.emitted_chunk_count}: {self._truncate(chunk)}",
+            refresh=False,
+        )
+        self.refresh()
+
+    def record_spoken_chunk(self, chunk: str) -> None:
+        self.state.spoken_chunk_count += 1
+        self.log_event(
+            f"Spoke chunk {self.state.spoken_chunk_count}: {self._truncate(chunk)}",
+            refresh=False,
+        )
+        self.refresh()
+
     def log_event(self, event: str, refresh: bool = True) -> None:
         self.state.recent_events.appendleft(event)
         if refresh:
@@ -93,6 +111,8 @@ class TerminalUI:
 
     def reset_turn(self) -> None:
         self.state.memory_hit_count = 0
+        self.state.emitted_chunk_count = 0
+        self.state.spoken_chunk_count = 0
         self.state.latencies_ms = {}
         self.state.transcript = ""
         self.state.response = ""
@@ -137,6 +157,7 @@ class TerminalUI:
         table.add_row("Input", "text" if self.state.text_input_mode else "voice")
         table.add_row("Ollama", self.state.ollama_version)
         table.add_row("Recall hits", str(self.state.memory_hit_count))
+        table.add_row("Chunks", f"{self.state.spoken_chunk_count}/{self.state.emitted_chunk_count}")
         table.add_row("State", self.state.status_line)
         return table
 
@@ -146,7 +167,7 @@ class TerminalUI:
             table.add_row("No timing data yet.")
             return table
 
-        for label in ("capture", "stt", "router", "tts", "total"):
+        for label in ("capture", "stt", "router", "first_token", "tts", "stream_total", "total"):
             if label in self.state.latencies_ms:
                 table.add_row(label, f"{self.state.latencies_ms[label]:.1f} ms")
         return table
@@ -176,3 +197,10 @@ class TerminalUI:
         for event in self.state.recent_events:
             table.add_row(event)
         return table
+
+    @staticmethod
+    def _truncate(text: str, limit: int = 72) -> str:
+        clean = " ".join(text.split())
+        if len(clean) <= limit:
+            return clean
+        return clean[: limit - 3] + "..."

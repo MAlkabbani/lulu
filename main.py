@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator
 from time import perf_counter
 
-from audio_handler import AudioHandler, MacOSTTS
+from audio_handler import AudioHandler, MacOSTTS, PhraseChunker
 from config import Settings
 from llm_router import HybridRouter
 from memory_manager import MemoryManager
@@ -30,6 +31,7 @@ def main() -> None:
     audio_handler = AudioHandler(settings)
     tts = MacOSTTS()
     ui = TerminalUI(settings)
+    tts.set_on_chunk_spoken(ui.record_spoken_chunk)
 
     ui.start()
     version = ollama_client.healthcheck()
@@ -76,31 +78,89 @@ def main() -> None:
             ui.set_mode("thinking", "Querying memory and generating a reply...")
             ui.log_event("Running memory recall and router.")
             router_start = perf_counter()
-            result = router.handle_transcript(transcript)
+            prepared = router.prepare_turn(transcript)
             ui.record_latency("router", perf_counter() - router_start)
-            ui.set_memory_hits(len(result.memory_hits))
-            ui.log_event(f"Retrieved {len(result.memory_hits)} memory hit(s).")
-            if result.saved_items:
-                ui.add_saved_items(result.saved_items)
+            ui.set_memory_hits(len(prepared.memory_hits))
+            ui.log_event(f"Retrieved {len(prepared.memory_hits)} memory hit(s).")
+            if prepared.saved_items:
+                ui.add_saved_items(prepared.saved_items)
 
-            if not result.reply_text:
+            if not prepared.fixed_reply and not prepared.final_messages:
                 ui.record_latency("total", perf_counter() - turn_start)
                 ui.log_event("No spoken response was generated.")
                 ui.set_mode("idle", "No spoken response generated.")
                 continue
 
-            ui.set_response(result.reply_text)
-            ui.log_event(f"Response ready: {result.reply_text}")
-            ui.set_mode("speaking", "Speaking response...")
-            tts_start = perf_counter()
-            tts.speak(result.reply_text)
-            ui.record_latency("tts", perf_counter() - tts_start)
+            chunker = PhraseChunker(settings)
+            response_parts: list[str] = []
+            stream_start = perf_counter()
+            speech_start: float | None = None
+            first_token_recorded = False
+            tts.start_turn()
+            ui.set_mode("streaming", "Streaming response and speaking chunks...")
+
+            if prepared.final_messages:
+                ui.log_event("Streaming final response from Ollama.")
+                stream_source = ollama_client.stream_chat(prepared.final_messages)
+            else:
+                ui.log_event("Streaming fixed reply through chunked TTS.")
+                stream_source = iter([prepared.fixed_reply])
+
+            for piece in _stream_and_chunk(
+                stream_source=stream_source,
+                chunker=chunker,
+                tts=tts,
+                ui=ui,
+                response_parts=response_parts,
+            ):
+                if not first_token_recorded and piece.strip():
+                    ui.record_latency("first_token", perf_counter() - stream_start)
+                    first_token_recorded = True
+                if speech_start is None and response_parts:
+                    speech_start = perf_counter()
+
+            final_text = "".join(response_parts).strip()
+            if not final_text:
+                ui.record_latency("stream_total", perf_counter() - stream_start)
+                ui.record_latency("total", perf_counter() - turn_start)
+                ui.log_event("No spoken response was generated.")
+                ui.set_mode("idle", "No spoken response generated.")
+                tts.finish_turn()
+                continue
+
+            ui.set_response(final_text)
+            ui.set_mode("speaking", "Waiting for queued speech chunks to finish...")
+            tts.finish_turn()
+            if speech_start is not None:
+                ui.record_latency("tts", perf_counter() - speech_start)
+            ui.record_latency("stream_total", perf_counter() - stream_start)
             ui.record_latency("total", perf_counter() - turn_start)
-            ui.log_event("Finished speaking response.")
+            ui.log_event("Finished streamed playback.")
             ui.set_mode("ready", "Turn complete. Waiting for the next turn.")
     except KeyboardInterrupt:
+        tts.close()
         ui.stop()
         print("\nGoodbye.")
+
+
+def _stream_and_chunk(
+    stream_source: Iterator[str],
+    chunker: PhraseChunker,
+    tts: MacOSTTS,
+    ui: TerminalUI,
+    response_parts: list[str],
+) -> Iterator[str]:
+    for piece in stream_source:
+        response_parts.append(piece)
+        ui.set_response("".join(response_parts).strip())
+        for chunk in chunker.push(piece):
+            tts.enqueue_chunk(chunk)
+            ui.record_emitted_chunk(chunk)
+        yield piece
+
+    for chunk in chunker.finish():
+        tts.enqueue_chunk(chunk)
+        ui.record_emitted_chunk(chunk)
 
 
 if __name__ == "__main__":

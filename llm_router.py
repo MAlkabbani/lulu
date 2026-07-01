@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from config import DEFAULT_SYSTEM_PROMPT, Settings
@@ -36,6 +36,15 @@ class RouteResult:
     bypassed_llm: bool = False
 
 
+@dataclass(frozen=True)
+class PreparedTurn:
+    fixed_reply: str = ""
+    final_messages: list[dict[str, Any]] = field(default_factory=list)
+    memory_hits: list[MemoryHit] = field(default_factory=list)
+    saved_items: list[str] = field(default_factory=list)
+    bypassed_llm: bool = False
+
+
 class HybridRouter:
     def __init__(
         self,
@@ -48,10 +57,29 @@ class HybridRouter:
         self.memory_manager = memory_manager
 
     def handle_transcript(self, transcript: str) -> RouteResult:
+        prepared = self.prepare_turn(transcript)
+        if not prepared.final_messages:
+            return RouteResult(
+                reply_text=prepared.fixed_reply,
+                memory_hits=prepared.memory_hits,
+                saved_items=prepared.saved_items,
+                bypassed_llm=prepared.bypassed_llm,
+            )
+
+        final_response = self.ollama_client.chat(messages=prepared.final_messages)
+        final_text = ((final_response.get("message") or {}).get("content") or "").strip()
+        return RouteResult(
+            reply_text=final_text,
+            memory_hits=prepared.memory_hits,
+            saved_items=prepared.saved_items,
+            bypassed_llm=prepared.bypassed_llm,
+        )
+
+    def prepare_turn(self, transcript: str) -> PreparedTurn:
         normalized = transcript.strip()
         if not normalized:
-            return RouteResult(
-                reply_text="",
+            return PreparedTurn(
+                fixed_reply="",
                 memory_hits=[],
                 saved_items=[],
                 bypassed_llm=True,
@@ -61,8 +89,8 @@ class HybridRouter:
         if normalized.lower().startswith(explicit_prefix):
             payload = normalized[len(explicit_prefix) :].strip(" :,-")
             if not payload:
-                return RouteResult(
-                    reply_text="Please say what you want me to save after insert info.",
+                return PreparedTurn(
+                    fixed_reply="Please say what you want me to save after insert info.",
                     memory_hits=[],
                     saved_items=[],
                     bypassed_llm=True,
@@ -72,8 +100,8 @@ class HybridRouter:
             reply_text = "Information explicitly saved to vault."
             if save_result.action == "updated":
                 reply_text = "Information explicitly updated in vault."
-            return RouteResult(
-                reply_text=reply_text,
+            return PreparedTurn(
+                fixed_reply=reply_text,
                 memory_hits=[],
                 saved_items=[payload],
                 bypassed_llm=True,
@@ -89,8 +117,9 @@ class HybridRouter:
         tool_calls = self.ollama_client.normalize_tool_calls(assistant_message)
 
         if not tool_calls:
-            return RouteResult(
-                reply_text=(assistant_message.get("content") or "").strip(),
+            return PreparedTurn(
+                fixed_reply="",
+                final_messages=messages,
                 memory_hits=memory_hits,
                 saved_items=[],
             )
@@ -98,11 +127,9 @@ class HybridRouter:
         assistant_tool_message = {"role": "assistant", "tool_calls": tool_calls}
         tool_messages, saved_items = self._execute_tool_calls(tool_calls)
         final_messages = messages + [assistant_tool_message] + tool_messages
-        final_response = self.ollama_client.chat(messages=final_messages)
-        final_text = ((final_response.get("message") or {}).get("content") or "").strip()
-
-        return RouteResult(
-            reply_text=final_text,
+        return PreparedTurn(
+            fixed_reply="",
+            final_messages=final_messages,
             memory_hits=memory_hits,
             saved_items=saved_items,
         )

@@ -32,6 +32,11 @@ class Settings:
     memory_dedup_query_k: int = int(os.getenv("MEMORY_DEDUP_QUERY_K", "3"))
     memory_max_tags: int = int(os.getenv("MEMORY_MAX_TAGS", "3"))
     memory_tag_classifier_model: str = os.getenv("MEMORY_TAG_CLASSIFIER_MODEL", "")
+    tts_stream_min_chunk_chars: int = int(os.getenv("TTS_STREAM_MIN_CHUNK_CHARS", "24"))
+    tts_stream_soft_chunk_chars: int = int(
+        os.getenv("TTS_STREAM_SOFT_CHUNK_CHARS", "72")
+    )
+    tts_stream_max_chunk_chars: int = int(os.getenv("TTS_STREAM_MAX_CHUNK_CHARS", "140"))
 
 
 DEFAULT_SYSTEM_PROMPT = """You are Lulu, a fully local Apple Silicon voice assistant.

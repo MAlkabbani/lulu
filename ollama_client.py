@@ -85,6 +85,7 @@ class OllamaClient:
             content = message.get("content")
             if content:
                 yield content
+        response.close()
 
     @staticmethod
     def normalize_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:

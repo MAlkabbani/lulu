@@ -164,6 +164,8 @@ The terminal now shows a small live dashboard with:
 - a recent-turn event log for capture, transcription, recall, save, and response milestones
 - per-turn latency snapshots for capture, STT, router, TTS, and total turn time
 
+Replies now stream into speech in phrase-sized chunks, so Lulu can begin talking before the full response is complete. This phrase-boundary policy favors lower latency today, but it may sound choppier than sentence-sized chunks and is intentionally isolated so it can be swapped later if user testing prefers smoother playback.
+
 ### Text-input mode
 
 This is useful for quick router and memory testing without live audio:
@@ -257,6 +259,7 @@ Then the Python app replies with a tool message:
 - Backend tag classification is validated in Python and falls back to `general` on parse failures
 - Retrieved memory is treated as untrusted context, not executable instruction text
 - TTS uses the native `say` binary through `subprocess.run([...])` instead of shell-interpolating model output
+- Chunked playback is non-interruptible in B1; interruption work is deferred to the C1 wake-word / continuous-listening phase
 
 ## Testing
 

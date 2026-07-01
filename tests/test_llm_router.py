@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
+
 from config import Settings
-from llm_router import HybridRouter
+from llm_router import HybridRouter, PreparedTurn
 from memory_manager import MemorySaveResult
 
 
@@ -32,17 +34,19 @@ class FakeMemoryManager:
 
 
 class FakeOllamaClient:
-    def __init__(self, response_message: dict) -> None:
-        self.response_message = response_message
+    def __init__(self, response_messages: list[dict] | dict) -> None:
+        if isinstance(response_messages, list):
+            self.response_messages = response_messages
+        else:
+            self.response_messages = [response_messages]
         self.calls = 0
         self.seen_messages: list[list[dict]] = []
 
     def chat(self, _messages, _tools=None):  # noqa: ANN001, D401
         self.calls += 1
         self.seen_messages.append(_messages)
-        if self.calls == 1:
-            return {"message": self.response_message}
-        return {"message": {"role": "assistant", "content": "Saved. I will remember that."}}
+        index = min(self.calls - 1, len(self.response_messages) - 1)
+        return {"message": self.response_messages[index]}
 
     @staticmethod
     def normalize_tool_calls(message):
@@ -73,18 +77,21 @@ def test_explicit_insert_info_reports_update_when_duplicate_is_merged() -> None:
 def test_tool_call_saves_memory_and_generates_follow_up() -> None:
     memory = FakeMemoryManager()
     ollama = FakeOllamaClient(
-        {
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "save_to_memory",
-                        "arguments": {"fact": "My dentist appointment is on Friday at 2 PM."},
-                    },
-                }
-            ],
-        }
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "save_to_memory",
+                            "arguments": {"fact": "My dentist appointment is on Friday at 2 PM."},
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Saved. I will remember that."},
+        ]
     )
     router = HybridRouter(Settings(), ollama, memory)
 
@@ -97,10 +104,60 @@ def test_tool_call_saves_memory_and_generates_follow_up() -> None:
 
 def test_router_includes_tag_aware_context_in_system_prompt() -> None:
     memory = FakeMemoryManager()
-    ollama = FakeOllamaClient({"role": "assistant", "content": "You like jasmine tea."})
+    ollama = FakeOllamaClient(
+        [
+            {"role": "assistant", "content": "You like jasmine tea."},
+            {"role": "assistant", "content": "You like jasmine tea."},
+        ]
+    )
     router = HybridRouter(Settings(), ollama, memory)
 
     result = router.handle_transcript("What tea do I like?")
 
     assert result.reply_text == "You like jasmine tea."
     assert "[tags: tea, preference] (explicit) My favorite tea is jasmine" in ollama.seen_messages[0][0]["content"]
+
+
+def test_prepare_turn_returns_streamable_messages_for_non_tool_reply() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient({"role": "assistant", "content": "You like jasmine tea."})
+    router = HybridRouter(Settings(), ollama, memory)
+
+    prepared = router.prepare_turn("What tea do I like?")
+
+    assert isinstance(prepared, PreparedTurn)
+    assert prepared.fixed_reply == ""
+    assert prepared.saved_items == []
+    assert len(prepared.final_messages) == 2
+    assert prepared.final_messages[1]["content"] == "What tea do I like?"
+
+
+def test_prepare_turn_streams_only_post_tool_final_messages() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "save_to_memory",
+                        "arguments": json.dumps(
+                            {"fact": "My dentist appointment is on Friday at 2 PM."}
+                        ),
+                    },
+                }
+            ],
+        }
+    )
+    router = HybridRouter(Settings(), ollama, memory)
+
+    prepared = router.prepare_turn("Please remember my dentist appointment is on Friday at 2 PM.")
+
+    assert prepared.fixed_reply == ""
+    assert prepared.saved_items == ["My dentist appointment is on Friday at 2 PM."]
+    assert memory.saved == [("My dentist appointment is on Friday at 2 PM.", "tool_call")]
+    assert prepared.final_messages[-1]["role"] == "tool"
+    tool_payload = json.loads(prepared.final_messages[-1]["content"])
+    assert tool_payload["action"] == "inserted"
+    assert tool_payload["text"] == "My dentist appointment is on Friday at 2 PM."

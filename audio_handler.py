@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+import queue
+import re
 import subprocess
 import tempfile
+import threading
 import wave
 from collections import deque
 from pathlib import Path
@@ -13,14 +17,126 @@ from mlx_whisper import transcribe
 from config import Settings
 
 
+class PhraseChunker:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.buffer = ""
+        self._boundary_pattern = re.compile(r"(.+?[,\.;:!?])(\s+|$)", re.DOTALL)
+
+    def push(self, text: str) -> list[str]:
+        if text:
+            self.buffer += text
+        return self._drain_ready_chunks(final=False)
+
+    def finish(self) -> list[str]:
+        return self._drain_ready_chunks(final=True)
+
+    def _drain_ready_chunks(self, final: bool) -> list[str]:
+        ready: list[str] = []
+        while True:
+            chunk = self._extract_next_chunk(final=final)
+            if chunk is None:
+                break
+            ready.append(chunk)
+        return ready
+
+    def _extract_next_chunk(self, final: bool) -> str | None:
+        trimmed = self.buffer.lstrip()
+        if not trimmed:
+            self.buffer = ""
+            return None
+        self.buffer = trimmed
+
+        if final:
+            chunk = self.buffer.strip()
+            self.buffer = ""
+            return chunk or None
+
+        if len(self.buffer) < self.settings.tts_stream_min_chunk_chars:
+            return None
+
+        last_good_end = None
+        for match in self._boundary_pattern.finditer(self.buffer):
+            if match.end(1) <= self.settings.tts_stream_soft_chunk_chars:
+                last_good_end = match.end(1)
+            else:
+                break
+
+        if last_good_end is not None:
+            return self._pop_chunk(last_good_end)
+
+        if len(self.buffer) >= self.settings.tts_stream_soft_chunk_chars:
+            soft_break = self._find_break_before(self.settings.tts_stream_soft_chunk_chars)
+            if soft_break is not None:
+                return self._pop_chunk(soft_break)
+
+        if len(self.buffer) >= self.settings.tts_stream_max_chunk_chars:
+            hard_break = self._find_break_before(self.settings.tts_stream_max_chunk_chars)
+            if hard_break is None:
+                hard_break = self.settings.tts_stream_max_chunk_chars
+            return self._pop_chunk(hard_break)
+
+        return None
+
+    def _find_break_before(self, limit: int) -> int | None:
+        capped = self.buffer[:limit]
+        for index in range(len(capped) - 1, -1, -1):
+            if capped[index].isspace():
+                return index
+        return None
+
+    def _pop_chunk(self, end_index: int) -> str | None:
+        chunk = self.buffer[:end_index].strip()
+        self.buffer = self.buffer[end_index:].lstrip()
+        return chunk or None
+
+
 class MacOSTTS:
-    def speak(self, text: str) -> None:
+    def __init__(self) -> None:
+        self._queue: queue.Queue[str | None] = queue.Queue()
+        self._on_chunk_spoken: Callable[[str], None] | None = None
+        self._worker = threading.Thread(target=self._run_worker, daemon=True)
+        self._worker.start()
+
+    def set_on_chunk_spoken(self, callback: Callable[[str], None] | None) -> None:
+        self._on_chunk_spoken = callback
+
+    def start_turn(self) -> None:
+        # The speech worker is long-lived; turns are delimited by queue drain only.
+        return
+
+    def enqueue_chunk(self, text: str) -> None:
         clean_text = text.strip()
         if not clean_text:
             return
+        self._queue.put(clean_text)
 
-        # Call the native macOS voice without shell interpolation.
-        subprocess.run(["say", clean_text], check=False)
+    def finish_turn(self) -> None:
+        self._queue.join()
+
+    def speak(self, text: str) -> None:
+        self.start_turn()
+        self.enqueue_chunk(text)
+        self.finish_turn()
+
+    def close(self) -> None:
+        self._queue.put(None)
+        self._queue.join()
+        self._worker.join(timeout=1)
+
+    def _run_worker(self) -> None:
+        while True:
+            chunk = self._queue.get()
+            try:
+                if chunk is None:
+                    return
+                # Phrase-boundary chunking is intentionally chosen for lower latency.
+                # This may be swapped later if sentence-level chunks sound smoother.
+                subprocess.run(["say", chunk], check=False)
+                if self._on_chunk_spoken is not None:
+                    self._on_chunk_spoken(chunk)
+            finally:
+                self._queue.task_done()
 
 
 class AudioHandler:
