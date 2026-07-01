@@ -37,6 +37,20 @@ class Settings:
         os.getenv("TTS_STREAM_SOFT_CHUNK_CHARS", "72")
     )
     tts_stream_max_chunk_chars: int = int(os.getenv("TTS_STREAM_MAX_CHUNK_CHARS", "140"))
+    wake_phrase: str = os.getenv("WAKE_PHRASE", "hey lulu")
+    wake_scan_max_record_seconds: float = float(
+        os.getenv("WAKE_SCAN_MAX_RECORD_SECONDS", "2.0")
+    )
+    wake_scan_min_speech_seconds: float = float(
+        os.getenv("WAKE_SCAN_MIN_SPEECH_SECONDS", "0.20")
+    )
+    conversation_window_seconds: float = float(
+        os.getenv("CONVERSATION_WINDOW_SECONDS", "12.0")
+    )
+    wake_cooldown_seconds: float = float(os.getenv("WAKE_COOLDOWN_SECONDS", "1.2"))
+    continuous_listening_enabled: bool = os.getenv(
+        "CONTINUOUS_LISTENING_ENABLED", "true"
+    ).lower() in {"1", "true", "yes", "on"}
 
 
 DEFAULT_SYSTEM_PROMPT = """You are Lulu, a fully local Apple Silicon voice assistant.

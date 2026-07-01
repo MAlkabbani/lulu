@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from collections.abc import Callable
 import queue
 import re
@@ -15,6 +16,23 @@ import sounddevice as sd
 from mlx_whisper import transcribe
 
 from config import Settings
+
+
+@dataclass(frozen=True)
+class WakeMatch:
+    matched: bool
+    remainder: str = ""
+
+
+WAKE_PHRASE_VARIANTS = (
+    "hey lulu",
+    "hey lu lu",
+    "hey loo loo",
+    "hey lou lou",
+    "hey looloo",
+    "hey luluu",
+    "hay lulu",
+)
 
 
 class PhraseChunker:
@@ -144,19 +162,31 @@ class AudioHandler:
         self.settings = settings
 
     def record_until_silence(self) -> np.ndarray | None:
+        return self._record_until_silence(
+            max_record_seconds=self.settings.vad_max_record_seconds,
+            min_speech_seconds=self.settings.vad_min_speech_seconds,
+        )
+
+    def record_wake_scan(self) -> np.ndarray | None:
+        return self._record_until_silence(
+            max_record_seconds=self.settings.wake_scan_max_record_seconds,
+            min_speech_seconds=self.settings.wake_scan_min_speech_seconds,
+        )
+
+    def _record_until_silence(
+        self,
+        max_record_seconds: float,
+        min_speech_seconds: float,
+    ) -> np.ndarray | None:
         sample_rate = self.settings.sample_rate
         frames_per_chunk = int(sample_rate * self.settings.vad_chunk_seconds)
-        max_chunks = int(
-            self.settings.vad_max_record_seconds / self.settings.vad_chunk_seconds
-        )
+        max_chunks = int(max_record_seconds / self.settings.vad_chunk_seconds)
         silence_limit = max(
             1, int(self.settings.vad_silence_seconds / self.settings.vad_chunk_seconds)
         )
         min_speech_chunks = max(
             1,
-            int(
-                self.settings.vad_min_speech_seconds / self.settings.vad_chunk_seconds
-            ),
+            int(min_speech_seconds / self.settings.vad_chunk_seconds),
         )
         pre_roll = deque(maxlen=3)
         speech_frames: list[np.ndarray] = []
@@ -217,6 +247,20 @@ class AudioHandler:
             return ""
         return self.transcribe_audio(audio)
 
+    def match_wake_phrase(self, transcript: str) -> WakeMatch:
+        normalized = normalize_text(transcript)
+        wake_phrase = normalize_text(self.settings.wake_phrase)
+        if not normalized or not wake_phrase:
+            return WakeMatch(matched=False)
+
+        aliases = _wake_aliases(wake_phrase)
+        for alias in aliases:
+            if normalized == alias:
+                return WakeMatch(matched=True, remainder="")
+            if normalized.startswith(f"{alias} "):
+                return WakeMatch(matched=True, remainder=normalized[len(alias) :].strip())
+        return WakeMatch(matched=False)
+
     def _write_temp_wav(self, audio: np.ndarray) -> Path:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             wav_path = Path(tmp.name)
@@ -228,3 +272,13 @@ class AudioHandler:
             wav_file.setframerate(self.settings.sample_rate)
             wav_file.writeframes(pcm16.tobytes())
         return wav_path
+
+
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _wake_aliases(wake_phrase: str) -> tuple[str, ...]:
+    if wake_phrase == "hey lulu":
+        return WAKE_PHRASE_VARIANTS
+    return (wake_phrase,)

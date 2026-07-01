@@ -87,8 +87,10 @@ Microphone
 ├── scripts
 │   └── memory_inspect.py
 └── tests
+    ├── test_continuous_listening.py
     ├── test_llm_router.py
-    └── test_memory_manager.py
+    ├── test_memory_manager.py
+    └── test_streaming_tts.py
 ```
 
 ## Apple Silicon Setup
@@ -154,11 +156,11 @@ On first use, macOS should prompt for microphone access for the terminal or IDE 
 python main.py
 ```
 
-Lulu will open the microphone, wait for speech, stop on silence, transcribe locally, route the request, then speak the response.
+Lulu now runs in always-on passive listening mode by default. It waits for the fixed wake phrase `hey lulu`, accepts a small whitelist of common Whisper-style near-misses such as `hey lu lu`, opens a 12-second follow-up conversation window, then returns to passive listening automatically after the window expires.
 
 The terminal now shows a small live dashboard with:
 
-- current assistant mode such as `listening`, `transcribing`, `thinking`, and `speaking`
+- current assistant mode such as `passive_listening`, `conversation_window`, `thinking`, and `speaking`
 - latest transcript and spoken response
 - recent memory saves
 - a recent-turn event log for capture, transcription, recall, save, and response milestones
@@ -166,12 +168,22 @@ The terminal now shows a small live dashboard with:
 
 Replies now stream into speech in phrase-sized chunks, so Lulu can begin talking before the full response is complete. This phrase-boundary policy favors lower latency today, but it may sound choppier than sentence-sized chunks and is intentionally isolated so it can be swapped later if user testing prefers smoother playback.
 
+While Lulu is speaking and briefly afterward, wake detection enters a software cooldown so the assistant does not immediately retrigger on its own TTS output.
+
 ### Text-input mode
 
 This is useful for quick router and memory testing without live audio:
 
 ```bash
 python main.py --text-input
+```
+
+### Turn-based troubleshooting mode
+
+Use this temporary fallback to bypass continuous listening and return to the older one-turn voice loop:
+
+```bash
+python main.py --turn-based
 ```
 
 ### Memory inspection mode
@@ -207,6 +219,12 @@ export MEMORY_DEDUP_SIMILARITY_THRESHOLD="0.92"
 export MEMORY_DEDUP_QUERY_K="3"
 export MEMORY_MAX_TAGS="3"
 export MEMORY_TAG_CLASSIFIER_MODEL=""
+export WAKE_PHRASE="hey lulu"
+export WAKE_SCAN_MAX_RECORD_SECONDS="2.0"
+export WAKE_SCAN_MIN_SPEECH_SECONDS="0.20"
+export CONVERSATION_WINDOW_SECONDS="12.0"
+export WAKE_COOLDOWN_SECONDS="1.2"
+export CONTINUOUS_LISTENING_ENABLED="true"
 ```
 
 ## Important Implementation Notes

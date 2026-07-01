@@ -28,6 +28,8 @@ class UIState:
     latencies_ms: dict[str, float] = field(default_factory=dict)
     ollama_version: str = "unknown"
     text_input_mode: bool = False
+    conversation_window_remaining: float | None = None
+    cooldown_remaining: float | None = None
 
 
 class TerminalUI:
@@ -104,6 +106,14 @@ class TerminalUI:
         )
         self.refresh()
 
+    def set_conversation_window_remaining(self, seconds: float | None) -> None:
+        self.state.conversation_window_remaining = seconds
+        self.refresh()
+
+    def set_cooldown_remaining(self, seconds: float | None) -> None:
+        self.state.cooldown_remaining = seconds
+        self.refresh()
+
     def log_event(self, event: str, refresh: bool = True) -> None:
         self.state.recent_events.appendleft(event)
         if refresh:
@@ -158,6 +168,16 @@ class TerminalUI:
         table.add_row("Ollama", self.state.ollama_version)
         table.add_row("Recall hits", str(self.state.memory_hit_count))
         table.add_row("Chunks", f"{self.state.spoken_chunk_count}/{self.state.emitted_chunk_count}")
+        if self.state.conversation_window_remaining is not None:
+            table.add_row(
+                "Window",
+                f"{self.state.conversation_window_remaining:.1f}s",
+            )
+        if self.state.cooldown_remaining is not None:
+            table.add_row(
+                "Cooldown",
+                f"{self.state.cooldown_remaining:.1f}s",
+            )
         table.add_row("State", self.state.status_line)
         return table
 
