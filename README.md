@@ -156,11 +156,12 @@ On first use, macOS should prompt for microphone access for the terminal or IDE 
 python main.py
 ```
 
-Lulu now runs in always-on passive listening mode by default. It waits for the fixed wake phrase `hey lulu`, accepts a small whitelist of common Whisper-style near-misses such as `hey lu lu`, opens a 12-second follow-up conversation window, then returns to passive listening automatically after the window expires.
+Lulu now runs in always-on passive listening mode by default. It waits for the fixed wake phrase `hey lulu`, uses a conservative scored matcher to tolerate common Whisper-style confusions such as `hay lou lou`, opens a 12-second follow-up conversation window, then returns to passive listening automatically after the window expires.
 
 The terminal now shows a small live dashboard with:
 
 - current assistant mode such as `passive_listening`, `conversation_window`, `thinking`, and `speaking`
+- a visible runtime badge showing `CONTINUOUS`, `TURN-BASED`, or `TEXT`
 - latest transcript and spoken response
 - recent memory saves
 - a recent-turn event log for capture, transcription, recall, save, and response milestones

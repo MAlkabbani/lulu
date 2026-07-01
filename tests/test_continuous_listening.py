@@ -3,6 +3,7 @@ from __future__ import annotations
 from audio_handler import AudioHandler, WakeMatch
 from config import Settings
 from main import _cooldown_active, _remaining_window, _window_active, parse_args
+from terminal_ui import TerminalUI
 
 
 def build_settings() -> Settings:
@@ -37,6 +38,15 @@ def test_match_wake_phrase_accepts_common_whisper_variant() -> None:
 
     assert result.matched is True
     assert result.remainder == "play some jazz"
+
+
+def test_match_wake_phrase_accepts_scored_whisper_confusion() -> None:
+    handler = AudioHandler(build_settings())
+
+    result = handler.match_wake_phrase("hay lou lou set a timer")
+
+    assert result.matched is True
+    assert result.remainder == "set a timer"
 
 
 def test_match_wake_phrase_rejects_non_wake_transcript() -> None:
@@ -79,3 +89,11 @@ def test_parse_args_accepts_turn_based_flag(monkeypatch) -> None:
     args = parse_args()
 
     assert args.turn_based is True
+
+
+def test_terminal_ui_runtime_badge_reflects_turn_based_mode() -> None:
+    ui = TerminalUI(build_settings())
+
+    ui.set_runtime_mode("turn-based")
+
+    assert ui._runtime_badge().plain == "TURN-BASED"

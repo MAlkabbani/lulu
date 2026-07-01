@@ -44,6 +44,12 @@ def main() -> None:
         version=str(version.get("version", "unknown")),
         text_input_mode=args.text_input,
     )
+    if args.text_input:
+        ui.set_runtime_mode("text")
+    elif args.turn_based or not settings.continuous_listening_enabled:
+        ui.set_runtime_mode("turn-based")
+    else:
+        ui.set_runtime_mode("continuous")
     if args.turn_based:
         ui.log_event("Turn-based troubleshooting mode enabled.")
 

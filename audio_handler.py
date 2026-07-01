@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 from dataclasses import dataclass
 from collections.abc import Callable
 import queue
@@ -23,16 +24,7 @@ class WakeMatch:
     matched: bool
     remainder: str = ""
 
-
-WAKE_PHRASE_VARIANTS = (
-    "hey lulu",
-    "hey lu lu",
-    "hey loo loo",
-    "hey lou lou",
-    "hey looloo",
-    "hey luluu",
-    "hay lulu",
-)
+WAKE_SCORE_THRESHOLD = 0.86
 
 
 class PhraseChunker:
@@ -253,12 +245,9 @@ class AudioHandler:
         if not normalized or not wake_phrase:
             return WakeMatch(matched=False)
 
-        aliases = _wake_aliases(wake_phrase)
-        for alias in aliases:
-            if normalized == alias:
-                return WakeMatch(matched=True, remainder="")
-            if normalized.startswith(f"{alias} "):
-                return WakeMatch(matched=True, remainder=normalized[len(alias) :].strip())
+        match = score_wake_phrase_match(normalized, wake_phrase)
+        if match is not None:
+            return match
         return WakeMatch(matched=False)
 
     def _write_temp_wav(self, audio: np.ndarray) -> Path:
@@ -275,10 +264,82 @@ class AudioHandler:
 
 
 def normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip().lower())
+    lowered = text.strip().lower()
+    lowered = re.sub(r"[^\w\s]", " ", lowered)
+    return re.sub(r"\s+", " ", lowered).strip()
 
 
-def _wake_aliases(wake_phrase: str) -> tuple[str, ...]:
-    if wake_phrase == "hey lulu":
-        return WAKE_PHRASE_VARIANTS
-    return (wake_phrase,)
+def score_wake_phrase_match(transcript: str, wake_phrase: str) -> WakeMatch | None:
+    wake_tokens = wake_phrase.split()
+    transcript_tokens = transcript.split()
+    if len(transcript_tokens) < len(wake_tokens):
+        return None
+
+    best_score = 0.0
+    best_prefix_length = 0
+
+    for prefix_length in range(len(wake_tokens), min(len(transcript_tokens), len(wake_tokens) + 1) + 1):
+        prefix_tokens = transcript_tokens[:prefix_length]
+        prefix_text = " ".join(prefix_tokens)
+        score = _wake_similarity_score(prefix_text, wake_phrase)
+        if score > best_score:
+            best_score = score
+            best_prefix_length = prefix_length
+
+    if best_score < WAKE_SCORE_THRESHOLD:
+        return None
+
+    remainder = " ".join(transcript_tokens[best_prefix_length:]).strip()
+    return WakeMatch(matched=True, remainder=remainder)
+
+
+def _wake_similarity_score(candidate: str, target: str) -> float:
+    candidate_signature = _wake_signature(candidate)
+    target_signature = _wake_signature(target)
+    if not candidate_signature or not target_signature:
+        return 0.0
+
+    raw_score = SequenceMatcher(None, candidate_signature, target_signature).ratio()
+
+    candidate_tokens = candidate_signature.split()
+    target_tokens = target_signature.split()
+    token_penalty = 0.0
+    if candidate_tokens and target_tokens and candidate_tokens[0] != target_tokens[0]:
+        token_penalty += 0.08
+    if len(candidate_tokens) != len(target_tokens):
+        token_penalty += 0.03
+
+    return max(0.0, raw_score - token_penalty)
+
+
+def _wake_signature(text: str) -> str:
+    tokens = [_normalize_wake_token(token) for token in text.split()]
+    collapsed: list[str] = []
+    index = 0
+
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {"lu", "lulu"}:
+            run_length = 1
+            next_index = index + 1
+            while next_index < len(tokens) and tokens[next_index] == "lu":
+                run_length += 1
+                next_index += 1
+            collapsed.append("lulu" if run_length >= 2 else token)
+            index = next_index
+            continue
+        collapsed.append(token)
+        index += 1
+
+    return " ".join(collapsed)
+
+
+def _normalize_wake_token(token: str) -> str:
+    squashed = re.sub(r"(.)\1{1,}", r"\1", token)
+    if squashed == "hay":
+        return "hey"
+    if squashed in {"ey", "he", "hey"}:
+        return "hey"
+    if squashed in {"lu", "loo", "lou", "luh", "lul", "lulo", "lulu", "luloo"}:
+        return "lu" if squashed != "lulu" else "lulu"
+    return squashed

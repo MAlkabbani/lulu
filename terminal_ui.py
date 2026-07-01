@@ -28,6 +28,7 @@ class UIState:
     latencies_ms: dict[str, float] = field(default_factory=dict)
     ollama_version: str = "unknown"
     text_input_mode: bool = False
+    runtime_mode: str = "continuous"
     conversation_window_remaining: float | None = None
     cooldown_remaining: float | None = None
 
@@ -60,6 +61,10 @@ class TerminalUI:
         self.state.status_line = f"{self.settings.app_name} is ready. Press Ctrl+C to stop."
         self.state.mode = "ready"
         self.log_event(f"Connected to Ollama {version}")
+        self.refresh()
+
+    def set_runtime_mode(self, runtime_mode: str) -> None:
+        self.state.runtime_mode = runtime_mode
         self.refresh()
 
     def set_mode(self, mode: str, status_line: str | None = None) -> None:
@@ -164,6 +169,7 @@ class TerminalUI:
         table = Table.grid(padding=(0, 1))
         table.add_row("Assistant", self.settings.app_name)
         table.add_row("Mode", self.state.mode)
+        table.add_row("Runtime", self._runtime_badge())
         table.add_row("Input", "text" if self.state.text_input_mode else "voice")
         table.add_row("Ollama", self.state.ollama_version)
         table.add_row("Recall hits", str(self.state.memory_hit_count))
@@ -224,3 +230,10 @@ class TerminalUI:
         if len(clean) <= limit:
             return clean
         return clean[: limit - 3] + "..."
+
+    def _runtime_badge(self) -> Text:
+        if self.state.text_input_mode:
+            return Text("TEXT", style="bold cyan")
+        if self.state.runtime_mode == "turn-based":
+            return Text("TURN-BASED", style="bold yellow")
+        return Text("CONTINUOUS", style="bold green")
