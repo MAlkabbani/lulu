@@ -22,6 +22,7 @@ Use these docs by role:
 - `README.md`: setup, runtime modes, and day-to-day operator guidance
 - `docs/prd.md`: reconstructed product scope, requirements, user stories, and success metrics
 - `docs/decision-log.md`: strategic and technical rationale behind the current architecture
+- `docs/implementation-plans/`: milestone-by-milestone implementation plans and verification notes
 - `Project_Blueprint_AI_Assistant.md`: original vision and early design intent
 
 ## What Lulu Does
@@ -187,6 +188,10 @@ sequenceDiagram
 ├── docs
 │   ├── README.md
 │   ├── decision-log.md
+│   ├── implementation-plans
+│   │   ├── a1-memory-deduplication-and-categories.md
+│   │   ├── b1-chunked-tts-streaming.md
+│   │   └── c1-wake-word-continuous-listening.md
 │   └── prd.md
 ├── audio_handler.py
 ├── config.py
@@ -420,6 +425,94 @@ pytest -q
 - Add memory confidence scoring
 - Add richer structured memory taxonomies or human-reviewed conflict resolution
 - Add explicit latency benchmarking and automated calibration reports
+
+## Uninstall
+
+Choose the level of removal that matches your goal.
+
+### Remove Lulu Source Only
+
+If you want to remove the project checkout and its local virtual environment, delete the repo directory from its parent folder:
+
+```bash
+cd ..
+rm -rf lulu
+```
+
+This removes the Lulu source tree, local `.venv`, tracked docs, and any repo-local generated files.
+
+### Remove Lulu Data But Keep The Repo
+
+If you want to keep the source code but remove local runtime state and generated artifacts:
+
+```bash
+rm -rf .venv
+rm -rf vault_db
+rm -rf .pytest_cache .ruff_cache .mypy_cache
+find . -type d -name __pycache__ -prune -exec rm -rf {} +
+rm -f .env .env.*
+```
+
+This removes the local Python environment, persisted Lulu memory, local caches, and local environment files while keeping the tracked source code.
+
+### Full Removal From This Mac
+
+Only do this if the machine-wide dependencies below were installed specifically for Lulu and are not needed by other projects.
+
+1. Remove the Ollama models used by Lulu:
+
+```bash
+ollama rm llama3.2:3b
+ollama rm nomic-embed-text
+```
+
+2. If you installed Ollama and the other system dependencies with Homebrew for Lulu, remove them with Homebrew:
+
+```bash
+brew uninstall ollama
+brew uninstall ffmpeg portaudio
+brew uninstall python@3.12
+```
+
+Notes:
+
+- `python@3.12`, `ffmpeg`, and `portaudio` may be shared with other local projects, so uninstall them only if you are sure you no longer need them.
+- If Ollama was installed through the macOS app or another method instead of Homebrew, use the official [Ollama macOS uninstall steps](https://docs.ollama.com/macos) for the app-specific removal path.
+
+3. Remove Ollama local data if you want a full cleanup of downloaded models, logs, and cache:
+
+```bash
+rm -rf ~/.ollama
+rm -rf ~/Library/Application\ Support/Ollama
+rm -rf ~/Library/Saved\ Application\ State/com.electron.ollama.savedState
+rm -rf ~/Library/Caches/com.electron.ollama
+rm -rf ~/Library/Caches/ollama
+rm -rf ~/Library/WebKit/com.electron.ollama
+```
+
+Warning:
+
+- Removing `~/.ollama` and the related Library paths deletes all local Ollama models and cached app data on this Mac, not just the models used by Lulu.
+
+### Revoke Microphone Access
+
+If you want to remove microphone access after uninstalling Lulu, revoke it for the terminal or IDE host app that ran Lulu in:
+
+- `System Settings > Privacy & Security > Microphone`
+
+### Verify Removal
+
+Check whether the project-local memory store still exists:
+
+```bash
+test -d vault_db && echo "vault_db still present" || echo "vault_db removed"
+```
+
+Check whether Ollama is still installed on the machine:
+
+```bash
+command -v ollama || echo "ollama not found"
+```
 
 ## Troubleshooting
 

@@ -21,11 +21,11 @@ The current documented product baseline includes:
 
 ## Engineering Plans And Implementation History
 
-These implementation plans explain how major shipped milestones were scoped and verified:
+These tracked implementation plans explain how major shipped milestones were scoped and verified:
 
-- [A1 Memory Deduplication And Categories](../.trae/documents/a1-memory-deduplication-and-categories-plan.md)
-- [B1 Chunked TTS Streaming](../.trae/documents/b1-chunked-tts-streaming-plan.md)
-- [C1 Wake-Word And Continuous Listening](../.trae/documents/c1-wake-word-continuous-listening-plan.md)
+- [A1 Memory Deduplication And Categories](./implementation-plans/a1-memory-deduplication-and-categories.md)
+- [B1 Chunked TTS Streaming](./implementation-plans/b1-chunked-tts-streaming.md)
+- [C1 Wake-Word And Continuous Listening](./implementation-plans/c1-wake-word-continuous-listening.md)
 
 ## How To Use These Docs
 
@@ -33,3 +33,4 @@ These implementation plans explain how major shipped milestones were scoped and 
 - Read the decision log if you need to understand why a technical or product direction was chosen.
 - Use the project blueprint for the original product vision and stack constraints.
 - Use the implementation plans when planning incremental changes against shipped milestones.
+- Treat `.trae/` as local workspace metadata rather than the public documentation surface.
