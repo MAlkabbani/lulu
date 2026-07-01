@@ -234,6 +234,11 @@ python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 ```
 
+Important:
+
+- Activate the virtual environment in every new terminal session before running Lulu commands that use `python` or `pip`.
+- If your shell says `python: command not found`, either reactivate the virtual environment with `source .venv/bin/activate` or use `python3` directly.
+
 ### 3. Start Ollama
 
 If the desktop app is not already running:
@@ -270,6 +275,7 @@ On first use, macOS should prompt for microphone access for the terminal or IDE 
 ### Voice mode
 
 ```bash
+source .venv/bin/activate
 python main.py
 ```
 
@@ -296,6 +302,7 @@ If a core local dependency fails during startup or a turn, Lulu now surfaces a d
 This is useful for quick router and memory testing without live audio:
 
 ```bash
+source .venv/bin/activate
 python main.py --text-input
 ```
 
@@ -304,6 +311,7 @@ python main.py --text-input
 Use this temporary fallback to bypass continuous listening and return to the older one-turn voice loop:
 
 ```bash
+source .venv/bin/activate
 python main.py --turn-based
 ```
 
@@ -312,6 +320,7 @@ python main.py --turn-based
 Use the text-mode sanity script to inspect stored canonical memories without modifying the database:
 
 ```bash
+source .venv/bin/activate
 python scripts/memory_inspect.py --limit 10
 python scripts/memory_inspect.py --query "What tea do I like?" --limit 3 --show-metadata
 ```
@@ -531,6 +540,27 @@ ollama serve
 Then rerun:
 
 ```bash
+source .venv/bin/activate
+python main.py
+```
+
+### `python: command not found`
+
+On many macOS shells, `python` is not available until you activate the repo virtual environment.
+
+Use:
+
+```bash
+source .venv/bin/activate
+python main.py
+```
+
+If you have not created the virtual environment yet, follow the setup steps above or use `python3` to bootstrap the environment:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 python main.py
 ```
 
@@ -553,6 +583,7 @@ Try the smaller model first:
 
 ```bash
 export MLX_WHISPER_MODEL="mlx-community/whisper-tiny-mlx"
+source .venv/bin/activate
 python main.py --turn-based
 ```
 
