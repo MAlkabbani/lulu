@@ -2,13 +2,27 @@
 
 Lulu VAIA is a fully local, Apple Silicon-first voice-to-voice AI assistant for macOS. It uses `mlx-whisper` for speech-to-text, Ollama for chat plus embeddings, ChromaDB for persistent long-term memory, and the native macOS `say` command for zero-setup text-to-speech.
 
-This MVP is designed for a Mac M1 workflow in July 2026:
+This current product baseline is designed for a Mac M1 workflow in July 2026:
 
 - No cloud inference
 - No CUDA
 - No PyTorch/CUDA runtime
 - Native Ollama endpoints on `http://localhost:11434`
 - Persistent semantic memory in `./vault_db`
+
+## Documentation
+
+- [Documentation Index](./docs/README.md)
+- [Reconstructed Product Requirements Document](./docs/prd.md)
+- [Decision Log](./docs/decision-log.md)
+- [Original Project Blueprint](./Project_Blueprint_AI_Assistant.md)
+
+Use these docs by role:
+
+- `README.md`: setup, runtime modes, and day-to-day operator guidance
+- `docs/prd.md`: reconstructed product scope, requirements, user stories, and success metrics
+- `docs/decision-log.md`: strategic and technical rationale behind the current architecture
+- `Project_Blueprint_AI_Assistant.md`: original vision and early design intent
 
 ## What Lulu Does
 
@@ -69,6 +83,100 @@ Microphone
   -> macOS say
 ```
 
+## Core System Flows
+
+### Explicit Memory Save
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Main as main.py
+    participant Router as HybridRouter
+    participant Memory as MemoryManager
+    participant Embed as Ollama /api/embed
+    participant Vault as ChromaDB
+    participant TTS as MacOSTTS
+
+    User->>Main: "insert info my dog's name is Nori"
+    Main->>Router: prepare_turn(transcript)
+    Router->>Memory: upsert_memory(payload)
+    Memory->>Embed: Create embedding
+    Embed-->>Memory: Vector
+    Memory->>Vault: Insert or update canonical record
+    Vault-->>Memory: Persisted
+    Router-->>Main: Fixed acknowledgement
+    Main->>TTS: Speak confirmation
+    TTS-->>User: "Information explicitly saved to vault."
+```
+
+### Conversational Turn With Optional Memory Tool
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Main as main.py
+    participant Router as HybridRouter
+    participant Memory as MemoryManager
+    participant Embed as Ollama /api/embed
+    participant Vault as ChromaDB
+    participant Chat as Ollama /api/chat
+    participant TTS as MacOSTTS
+
+    User->>Main: Normal question or durable fact
+    Main->>Router: prepare_turn(transcript)
+    Router->>Memory: query_memory(top_k=3)
+    Memory->>Embed: Embed query
+    Embed-->>Memory: Query vector
+    Memory->>Vault: Recall relevant memories
+    Vault-->>Memory: Memory hits
+    Memory-->>Router: Context with tags
+    Router->>Chat: Chat request with save_to_memory tool
+    alt Tool call requested
+        Chat-->>Router: save_to_memory(fact)
+        Router->>Memory: upsert_memory(fact)
+        Memory->>Vault: Update canonical store
+        Router->>Chat: Tool result
+        Chat-->>Main: Final reply
+    else No tool call
+        Chat-->>Main: Final reply
+    end
+    Main->>Chat: Stream response
+    Chat-->>Main: Token chunks
+    Main->>TTS: Phrase-boundary speech chunks
+    TTS-->>User: Spoken answer
+```
+
+### Continuous Listening And Wake Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Main as main.py
+    participant Audio as AudioHandler
+    participant STT as mlx-whisper
+    participant Wake as Wake Matcher
+    participant Guard as Self-Audio Guard
+    participant Router as HybridRouter
+    participant TTS as MacOSTTS
+
+    loop Passive listening
+        Main->>Audio: record_wake_scan()
+        Audio->>STT: transcribe short buffer
+        STT-->>Audio: Transcript
+        Audio->>Wake: match_wake_phrase()
+        Wake-->>Main: score and remainder
+        Main->>Guard: compare against recent assistant speech
+        alt Accepted wake and not echo
+            Main->>Router: Process inline request or open follow-up window
+            Router-->>Main: Response plan
+            Main->>TTS: Speak response
+            Main->>Main: Start cooldown and conversation window
+        else Rejected wake or likely self-audio
+            Main->>Main: Continue passive listening
+        end
+    end
+```
+
 ## Project Structure
 
 ```text
@@ -76,6 +184,10 @@ Microphone
 ├── .gitignore
 ├── README.md
 ├── Project_Blueprint_AI_Assistant.md
+├── docs
+│   ├── README.md
+│   ├── decision-log.md
+│   └── prd.md
 ├── audio_handler.py
 ├── config.py
 ├── llm_router.py
@@ -282,11 +394,11 @@ Then the Python app replies with a tool message:
 - Backend tag classification is validated in Python and falls back to `general` on parse failures
 - Retrieved memory is treated as untrusted context, not executable instruction text
 - TTS uses the native `say` binary through `subprocess.run([...])` instead of shell-interpolating model output
-- Chunked playback is non-interruptible in B1; interruption work is deferred to the C1 wake-word / continuous-listening phase
+- Chunked playback is currently non-interruptible; interruption work is deferred to a future playback milestone
 
 ## Testing
 
-Run the focused router test suite:
+Run the focused test suite:
 
 ```bash
 pytest -q
@@ -304,10 +416,10 @@ pytest -q
 ## Roadmap Ideas
 
 - Replace macOS `say` with a higher-quality local TTS engine
-- Add a wake word and continuous VAD mode
-- Stream partial LLM output to chunked TTS playback
+- Add barge-in or interruption support during assistant playback
 - Add memory confidence scoring
 - Add richer structured memory taxonomies or human-reviewed conflict resolution
+- Add explicit latency benchmarking and automated calibration reports
 
 ## Troubleshooting
 
