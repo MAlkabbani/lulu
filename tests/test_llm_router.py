@@ -42,9 +42,13 @@ class FakeOllamaClient:
         self.calls = 0
         self.seen_messages: list[list[dict]] = []
 
-    def chat(self, _messages, _tools=None):  # noqa: ANN001, D401
+    def chat(
+        self,
+        messages=None,  # noqa: ANN001
+        **_kwargs,  # noqa: ANN003
+    ):  # noqa: D401
         self.calls += 1
-        self.seen_messages.append(_messages)
+        self.seen_messages.append(messages)
         index = min(self.calls - 1, len(self.response_messages) - 1)
         return {"message": self.response_messages[index]}
 

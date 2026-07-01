@@ -19,6 +19,22 @@ from mlx_whisper import transcribe
 from config import Settings
 
 
+class AudioCaptureError(RuntimeError):
+    """Raised when microphone capture fails for dependency or device reasons."""
+
+
+class AudioTranscriptionError(RuntimeError):
+    """Raised when local transcription fails."""
+
+
+class TTSPlaybackError(RuntimeError):
+    """Raised when native macOS speech playback fails for a chunk."""
+
+    def __init__(self, chunk: str, message: str) -> None:
+        super().__init__(message)
+        self.chunk = chunk
+
+
 @dataclass(frozen=True)
 class WakeMatch:
     matched: bool
@@ -106,15 +122,22 @@ class MacOSTTS:
     def __init__(self) -> None:
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._on_chunk_spoken: Callable[[str], None] | None = None
+        self._on_chunk_error: Callable[[TTSPlaybackError], None] | None = None
+        self._turn_errors: list[TTSPlaybackError] = []
+        self._turn_error_lock = threading.Lock()
         self._worker = threading.Thread(target=self._run_worker, daemon=True)
         self._worker.start()
 
     def set_on_chunk_spoken(self, callback: Callable[[str], None] | None) -> None:
         self._on_chunk_spoken = callback
 
+    def set_on_chunk_error(self, callback: Callable[[TTSPlaybackError], None] | None) -> None:
+        self._on_chunk_error = callback
+
     def start_turn(self) -> None:
         # The speech worker is long-lived; turns are delimited by queue drain only.
-        return
+        with self._turn_error_lock:
+            self._turn_errors = []
 
     def enqueue_chunk(self, text: str) -> None:
         clean_text = text.strip()
@@ -122,13 +145,15 @@ class MacOSTTS:
             return
         self._queue.put(clean_text)
 
-    def finish_turn(self) -> None:
+    def finish_turn(self) -> list[TTSPlaybackError]:
         self._queue.join()
+        with self._turn_error_lock:
+            return list(self._turn_errors)
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str) -> list[TTSPlaybackError]:
         self.start_turn()
         self.enqueue_chunk(text)
-        self.finish_turn()
+        return self.finish_turn()
 
     def close(self) -> None:
         self._queue.put(None)
@@ -143,11 +168,39 @@ class MacOSTTS:
                     return
                 # Phrase-boundary chunking is intentionally chosen for lower latency.
                 # This may be swapped later if sentence-level chunks sound smoother.
-                subprocess.run(["say", chunk], check=False)
+                try:
+                    result = subprocess.run(
+                        ["say", chunk],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                except OSError as exc:
+                    error = TTSPlaybackError(
+                        chunk,
+                        f"TTS playback failed because macOS 'say' could not run: {exc}",
+                    )
+                    self._record_turn_error(error)
+                    if self._on_chunk_error is not None:
+                        self._on_chunk_error(error)
+                    continue
+
+                if result.returncode != 0:
+                    stderr = (result.stderr or "").strip()
+                    detail = stderr or f"macOS 'say' exited with status {result.returncode}."
+                    error = TTSPlaybackError(chunk, f"TTS playback failed: {detail}")
+                    self._record_turn_error(error)
+                    if self._on_chunk_error is not None:
+                        self._on_chunk_error(error)
+                    continue
                 if self._on_chunk_spoken is not None:
                     self._on_chunk_spoken(chunk)
             finally:
                 self._queue.task_done()
+
+    def _record_turn_error(self, error: TTSPlaybackError) -> None:
+        with self._turn_error_lock:
+            self._turn_errors.append(error)
 
 
 class AudioHandler:
@@ -186,34 +239,39 @@ class AudioHandler:
         speech_started = False
         silence_chunks = 0
 
-        with sd.InputStream(
-            samplerate=sample_rate,
-            channels=self.settings.channels,
-            dtype="float32",
-            blocksize=frames_per_chunk,
-        ) as stream:
-            for _ in range(max_chunks):
-                chunk, _ = stream.read(frames_per_chunk)
-                chunk = np.squeeze(chunk)
-                rms = float(np.sqrt(np.mean(np.square(chunk))))
-                is_speech = rms >= self.settings.vad_threshold
+        try:
+            with sd.InputStream(
+                samplerate=sample_rate,
+                channels=self.settings.channels,
+                dtype="float32",
+                blocksize=frames_per_chunk,
+            ) as stream:
+                for _ in range(max_chunks):
+                    chunk, _ = stream.read(frames_per_chunk)
+                    chunk = np.squeeze(chunk)
+                    rms = float(np.sqrt(np.mean(np.square(chunk))))
+                    is_speech = rms >= self.settings.vad_threshold
 
-                if not speech_started:
-                    pre_roll.append(chunk.copy())
+                    if not speech_started:
+                        pre_roll.append(chunk.copy())
+                        if is_speech:
+                            speech_started = True
+                            speech_frames.extend(pre_roll)
+                            silence_chunks = 0
+                        continue
+
+                    speech_frames.append(chunk.copy())
                     if is_speech:
-                        speech_started = True
-                        speech_frames.extend(pre_roll)
                         silence_chunks = 0
-                    continue
+                    else:
+                        silence_chunks += 1
 
-                speech_frames.append(chunk.copy())
-                if is_speech:
-                    silence_chunks = 0
-                else:
-                    silence_chunks += 1
-
-                if len(speech_frames) >= min_speech_chunks and silence_chunks >= silence_limit:
-                    break
+                    if len(speech_frames) >= min_speech_chunks and silence_chunks >= silence_limit:
+                        break
+        except Exception as exc:
+            raise AudioCaptureError(
+                "Microphone capture failed. Check microphone permission and audio device availability."
+            ) from exc
 
         if not speech_frames:
             return None
@@ -224,10 +282,15 @@ class AudioHandler:
     def transcribe_audio(self, audio: np.ndarray) -> str:
         wav_path = self._write_temp_wav(audio)
         try:
-            result = transcribe(
-                str(wav_path),
-                path_or_hf_repo=self.settings.whisper_model,
-            )
+            try:
+                result = transcribe(
+                    str(wav_path),
+                    path_or_hf_repo=self.settings.whisper_model,
+                )
+            except Exception as exc:
+                raise AudioTranscriptionError(
+                    "Local Whisper transcription failed. Check the configured model and local MLX runtime."
+                ) from exc
         finally:
             wav_path.unlink(missing_ok=True)
 

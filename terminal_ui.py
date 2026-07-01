@@ -76,6 +76,18 @@ class TerminalUI:
         self.state.runtime_mode = runtime_mode
         self.refresh()
 
+    def show_startup_failure(self, detail: str) -> None:
+        self.state.mode = "startup_error"
+        self.state.status_line = detail
+        self.log_event(detail, refresh=False)
+        self.refresh()
+
+    def show_dependency_error(self, mode: str, detail: str) -> None:
+        self.state.mode = mode
+        self.state.status_line = detail
+        self.log_event(detail, refresh=False)
+        self.refresh()
+
     def set_mode(self, mode: str, status_line: str | None = None) -> None:
         self.state.mode = mode
         if status_line is not None:
