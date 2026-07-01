@@ -53,7 +53,6 @@ class AudioHandler:
             dtype="float32",
             blocksize=frames_per_chunk,
         ) as stream:
-            print("Listening... speak now.")
             for _ in range(max_chunks):
                 chunk, _ = stream.read(frames_per_chunk)
                 chunk = np.squeeze(chunk)

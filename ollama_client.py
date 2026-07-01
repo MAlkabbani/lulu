@@ -43,14 +43,18 @@ class OllamaClient:
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "model": self.settings.chat_model,
+            "model": model or self.settings.chat_model,
             "messages": messages,
             "stream": False,
         }
         if tools:
             payload["tools"] = tools
+        if options:
+            payload["options"] = options
 
         response = self.session.post(
             f"{self.settings.ollama_base_url}/api/chat",
@@ -88,3 +92,48 @@ class OllamaClient:
         if not isinstance(tool_calls, list):
             return []
         return tool_calls
+
+    def classify_memory_tags(self, fact: str) -> list[str]:
+        response = self.chat(
+            model=self.settings.memory_tag_classifier_model or self.settings.chat_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You assign 1 to 3 short lowercase tags to long-term memory facts. "
+                        "Return only strict JSON in the form "
+                        '{"tags":["tag-one","tag-two"]}. '
+                        "Use stable noun-like tags. No prose, no markdown, no code fences."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Fact: {fact}",
+                },
+            ],
+            options={"temperature": 0},
+        )
+        message = response.get("message") or {}
+        content = (message.get("content") or "").strip()
+        parsed = self._parse_json_content(content)
+
+        if isinstance(parsed, dict):
+            tags = parsed.get("tags")
+            if isinstance(tags, list):
+                return [str(tag) for tag in tags]
+        if isinstance(parsed, list):
+            return [str(tag) for tag in parsed]
+        return []
+
+    @staticmethod
+    def _parse_json_content(content: str) -> Any:
+        clean_content = content.strip()
+        if clean_content.startswith("```"):
+            clean_content = clean_content.strip("`")
+            if clean_content.startswith("json"):
+                clean_content = clean_content[4:].strip()
+
+        try:
+            return json.loads(clean_content)
+        except json.JSONDecodeError:
+            return None
