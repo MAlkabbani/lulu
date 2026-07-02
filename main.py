@@ -175,6 +175,7 @@ def _run_continuous_voice_loop(
     cooldown_until = 0.0
     last_assistant_reply = ""
     last_assistant_reply_at = 0.0
+    ui.set_wake_guidance(_default_wake_guidance(settings))
     ui.log_event(f"Passive listening enabled. Waiting for '{settings.wake_phrase}'.")
 
     while True:
@@ -241,6 +242,7 @@ def _run_continuous_voice_loop(
 
         ui.set_conversation_window_remaining(None)
         ui.set_mode("passive_listening", f"Waiting for '{settings.wake_phrase}'...")
+        ui.set_wake_guidance(_default_wake_guidance(settings))
         audio, capture_failed = _capture_audio(audio_handler.record_wake_scan, ui)
         if capture_failed:
             sleep(0.2)
@@ -251,6 +253,9 @@ def _run_continuous_voice_loop(
         transcript = _transcribe_audio(audio_handler, ui, audio, wake_scan=True)
         if not transcript:
             ui.set_response("Wake scan produced no transcript. Listening again...")
+            ui.set_wake_guidance(
+                "Try speaking a little louder or closer to the mic, then pause after the wake phrase."
+            )
             continue
 
         wake_match = audio_handler.match_wake_phrase(transcript)
@@ -268,7 +273,10 @@ def _run_continuous_voice_loop(
                 accepted=False,
                 reason="self-audio-guard",
             )
-            ui.set_response("Wake rejected: self-audio-guard")
+            ui.set_response("Wake rejected: likely picked up Lulu's own voice.")
+            ui.set_wake_guidance(
+                "Wait until Lulu finishes speaking, then say the wake phrase again."
+            )
             ui.log_event("Rejected wake attempt due to self-audio guard.")
             continue
 
@@ -281,9 +289,16 @@ def _run_continuous_voice_loop(
                 reason=rejection_reason,
             )
             ui.set_response(
-                f"Wake rejected: {rejection_reason} (score {wake_match.score:.2f})"
+                _wake_rejection_response(
+                    reason=rejection_reason,
+                    score=wake_match.score,
+                    settings=settings,
+                )
             )
-            ui.log_event("Rejected wake attempt below threshold.")
+            ui.set_wake_guidance(_wake_rejection_guidance(rejection_reason, settings))
+            ui.log_event(
+                f"Rejected wake attempt: {rejection_reason} (score {wake_match.score:.2f})."
+            )
             continue
 
         ui.record_wake_attempt(
@@ -296,6 +311,7 @@ def _run_continuous_voice_loop(
             f"Accepted wake attempt score={wake_match.score:.2f}: {wake_match.matched_prefix or settings.wake_phrase}"
         )
         ui.log_event(f"Wake phrase detected: {settings.wake_phrase}")
+        ui.set_wake_guidance("Wake matched. Speak your request now.")
         conversation_deadline = _next_conversation_deadline(settings)
         ui.set_conversation_window_remaining(settings.conversation_window_seconds)
 
@@ -326,6 +342,40 @@ def _run_continuous_voice_loop(
             )
 
 
+def _default_wake_guidance(settings: Settings) -> str:
+    guidance = f"Say '{settings.wake_phrase}', pause briefly, then speak your request."
+    if settings.practical_voice_mode:
+        return guidance + " Practical voice mode is on for a more forgiving wake scan."
+    return guidance
+
+
+def _wake_rejection_response(reason: str, score: float, settings: Settings) -> str:
+    phrase = settings.wake_phrase
+    if reason == "too-short":
+        return f"Wake rejected: heard only a short fragment. Try saying '{phrase}' more fully."
+    if reason == "self-audio-guard":
+        return "Wake rejected: likely picked up Lulu's own voice."
+    if reason == "below-threshold":
+        return (
+            f"Wake rejected: it did not sound enough like '{phrase}' "
+            f"(score {score:.2f})."
+        )
+    return f"Wake rejected: {reason} (score {score:.2f})"
+
+
+def _wake_rejection_guidance(reason: str, settings: Settings) -> str:
+    phrase = settings.wake_phrase
+    if reason == "too-short":
+        return f"Say '{phrase}' clearly and let the phrase finish before your request."
+    if reason == "below-threshold":
+        return (
+            f"Try saying '{phrase}' first, pause briefly, then say the request in a second phrase."
+        )
+    if reason == "self-audio-guard":
+        return "Wait until Lulu finishes speaking, then try the wake phrase again."
+    return _default_wake_guidance(settings)
+
+
 def _transcribe_audio(
     audio_handler: AudioHandler,
     ui: TerminalUI,
@@ -350,6 +400,7 @@ def _transcribe_audio(
     if wake_scan and transcript:
         ui.set_transcript(transcript)
         ui.set_response("Wake scan captured speech. Matching wake phrase...")
+        ui.set_wake_guidance("Checking whether the wake phrase matched what Whisper heard.")
     return transcript
 
 

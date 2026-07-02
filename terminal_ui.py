@@ -46,6 +46,9 @@ class UIState:
     wake_score_threshold: float | None = None
     accepted_wake_attempts: int = 0
     rejected_wake_attempts: int = 0
+    wake_score_total: float = 0.0
+    wake_rejection_reasons: Counter[str] = field(default_factory=Counter)
+    wake_guidance: str = "Say the wake phrase, pause briefly, then speak your request."
     wake_score_buckets: Counter[str] = field(default_factory=Counter)
 
 
@@ -84,6 +87,7 @@ class TerminalUI:
             self.state.ollama_version = version
             self.state.text_input_mode = text_input_mode
             self.state.wake_score_threshold = self.settings.wake_match_score_threshold
+            self.state.wake_guidance = self._default_wake_guidance()
             self.state.status_line = f"{self.settings.app_name} is ready. Press Ctrl+C to stop."
             self.state.mode = "ready"
             self.log_event(f"Connected to Ollama {version}", refresh=False)
@@ -192,6 +196,11 @@ class TerminalUI:
             self.state.cooldown_remaining = seconds
             self._refresh_locked()
 
+    def set_wake_guidance(self, message: str) -> None:
+        with self._state_lock:
+            self.state.wake_guidance = message
+            self._refresh_locked()
+
     def record_wake_attempt(
         self,
         transcript: str,
@@ -207,6 +216,8 @@ class TerminalUI:
                 self.state.accepted_wake_attempts += 1
             else:
                 self.state.rejected_wake_attempts += 1
+                self.state.wake_rejection_reasons[reason] += 1
+            self.state.wake_score_total += score
             self.state.wake_score_buckets[self._bucket_label(score)] += 1
             attempt = (
                 f"{label.upper()} score={score:.2f} "
@@ -324,6 +335,13 @@ class TerminalUI:
             Text("text" if self.state.text_input_mode else "voice", style="bold cyan"),
         )
         table.add_row("Ollama", Text(self.state.ollama_version, style="bold white"))
+        table.add_row(
+            "Voice profile",
+            Text(
+                "practical" if self.settings.practical_voice_mode else "default",
+                style="bold green" if self.settings.practical_voice_mode else "bright_blue",
+            ),
+        )
         table.add_row("Recall hits", Text(str(self.state.memory_hit_count), style="green"))
         table.add_row(
             "Chunks",
@@ -409,11 +427,15 @@ class TerminalUI:
             "Accepted/Rejected",
             f"{self.state.accepted_wake_attempts}/{self.state.rejected_wake_attempts}",
         )
+        table.add_row("Success rate", self._wake_success_rate_text())
+        table.add_row("Average score", self._wake_average_score_text())
         histogram = ", ".join(
             f"{label}:{self.state.wake_score_buckets.get(label, 0)}"
             for label in ("<0.50", "0.50-0.74", "0.75-0.85", "0.86-0.94", "0.95+")
         )
         table.add_row("Score bins", histogram)
+        table.add_row("Rejected by", self._wake_rejection_reason_text())
+        table.add_row("Guidance", Text(self.state.wake_guidance, style="white", overflow="fold"))
         if not self.state.recent_wake_attempts:
             table.add_row("Attempts", "No wake attempts yet.")
             return table
@@ -524,6 +546,41 @@ class TerminalUI:
     def _wake_decision_text(self) -> Text:
         style = "green" if self.state.last_wake_decision.startswith("accepted") else "yellow"
         return Text(self.state.last_wake_decision, style=style, overflow="fold")
+
+    def _wake_success_rate_text(self) -> Text:
+        total = self.state.accepted_wake_attempts + self.state.rejected_wake_attempts
+        if total == 0:
+            return Text("n/a", style="dim")
+        success_rate = self.state.accepted_wake_attempts / total
+        if success_rate >= 0.6:
+            style = "green"
+        elif success_rate >= 0.3:
+            style = "yellow"
+        else:
+            style = "red"
+        return Text(f"{success_rate * 100:.0f}%", style=style)
+
+    def _wake_average_score_text(self) -> Text:
+        total = self.state.accepted_wake_attempts + self.state.rejected_wake_attempts
+        if total == 0:
+            return Text("n/a", style="dim")
+        average = self.state.wake_score_total / total
+        return Text(f"{average:.2f}", style="bold cyan")
+
+    def _wake_rejection_reason_text(self) -> Text:
+        if not self.state.wake_rejection_reasons:
+            return Text("n/a", style="dim")
+        summary = ", ".join(
+            f"{reason}:{count}"
+            for reason, count in self.state.wake_rejection_reasons.most_common(3)
+        )
+        return Text(summary, style="yellow", overflow="fold")
+
+    def _default_wake_guidance(self) -> str:
+        guidance = f"Say '{self.settings.wake_phrase}', pause briefly, then speak your request."
+        if self.settings.practical_voice_mode:
+            return guidance + " Practical voice mode is on for a more forgiving wake scan."
+        return guidance
 
     @staticmethod
     def _latency_text(milliseconds: float) -> Text:
