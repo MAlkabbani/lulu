@@ -34,18 +34,31 @@ class Settings:
     memory_dedup_query_k: int = int(os.getenv("MEMORY_DEDUP_QUERY_K", "3"))
     memory_max_tags: int = int(os.getenv("MEMORY_MAX_TAGS", "3"))
     memory_tag_classifier_model: str = os.getenv("MEMORY_TAG_CLASSIFIER_MODEL", "")
-    tts_stream_min_chunk_chars: int = int(os.getenv("TTS_STREAM_MIN_CHUNK_CHARS", "24"))
-    tts_stream_soft_chunk_chars: int = int(
-        os.getenv("TTS_STREAM_SOFT_CHUNK_CHARS", "72")
+    tts_stream_min_chunk_chars: int = int(os.getenv("TTS_STREAM_MIN_CHUNK_CHARS", "36"))
+    tts_stream_start_buffer_chars: int = int(
+        os.getenv("TTS_STREAM_START_BUFFER_CHARS", "110")
     )
-    tts_stream_max_chunk_chars: int = int(os.getenv("TTS_STREAM_MAX_CHUNK_CHARS", "140"))
+    tts_stream_group_target_chars: int = int(
+        os.getenv("TTS_STREAM_GROUP_TARGET_CHARS", "150")
+    )
+    tts_stream_max_group_sentences: int = int(
+        os.getenv("TTS_STREAM_MAX_GROUP_SENTENCES", "2")
+    )
+    tts_stream_soft_chunk_chars: int = int(
+        os.getenv("TTS_STREAM_SOFT_CHUNK_CHARS", "150")
+    )
+    tts_stream_max_chunk_chars: int = int(os.getenv("TTS_STREAM_MAX_CHUNK_CHARS", "240"))
     wake_phrase: str = os.getenv("WAKE_PHRASE", "hey lulu")
     wake_scan_max_record_seconds: float = float(
-        os.getenv("WAKE_SCAN_MAX_RECORD_SECONDS", "2.0")
+        os.getenv("WAKE_SCAN_MAX_RECORD_SECONDS", "3.0")
     )
     wake_scan_min_speech_seconds: float = float(
-        os.getenv("WAKE_SCAN_MIN_SPEECH_SECONDS", "0.20")
+        os.getenv("WAKE_SCAN_MIN_SPEECH_SECONDS", "0.25")
     )
+    wake_scan_silence_seconds: float = float(
+        os.getenv("WAKE_SCAN_SILENCE_SECONDS", "0.45")
+    )
+    wake_scan_pre_roll_chunks: int = int(os.getenv("WAKE_SCAN_PRE_ROLL_CHUNKS", "6"))
     conversation_window_seconds: float = float(
         os.getenv("CONVERSATION_WINDOW_SECONDS", "12.0")
     )

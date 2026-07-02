@@ -108,6 +108,16 @@ def test_match_wake_phrase_accepts_i_love_prefix_confusion() -> None:
     assert result.score >= 0.86
 
 
+def test_match_wake_phrase_accepts_leading_filler_before_wake_phrase() -> None:
+    handler = AudioHandler(build_settings())
+
+    result = handler.match_wake_phrase("um hey lulu what time is it")
+
+    assert result.matched is True
+    assert result.remainder == "what time is it"
+    assert result.score >= 0.86
+
+
 def test_resolve_input_device_accepts_blank_numeric_and_named_values() -> None:
     assert _resolve_input_device("") is None
     assert _resolve_input_device("1") == 1
@@ -288,6 +298,34 @@ def test_capture_audio_reports_dependency_error_on_microphone_failure() -> None:
     assert "microphone permission missing" in ui.state.status_line
 
 
+def test_record_wake_scan_uses_wake_specific_capture_settings(monkeypatch) -> None:
+    captured: dict[str, float | int] = {}
+    handler = AudioHandler(build_settings())
+
+    def fake_record_until_silence(
+        max_record_seconds: float,
+        min_speech_seconds: float,
+        silence_seconds: float,
+        pre_roll_chunks: int,
+    ) -> None:
+        captured["max_record_seconds"] = max_record_seconds
+        captured["min_speech_seconds"] = min_speech_seconds
+        captured["silence_seconds"] = silence_seconds
+        captured["pre_roll_chunks"] = pre_roll_chunks
+        return None
+
+    monkeypatch.setattr(handler, "_record_until_silence", fake_record_until_silence)
+
+    handler.record_wake_scan()
+
+    assert captured == {
+        "max_record_seconds": handler.settings.wake_scan_max_record_seconds,
+        "min_speech_seconds": handler.settings.wake_scan_min_speech_seconds,
+        "silence_seconds": handler.settings.wake_scan_silence_seconds,
+        "pre_roll_chunks": handler.settings.wake_scan_pre_roll_chunks,
+    }
+
+
 def test_transcribe_audio_reports_dependency_error_on_whisper_failure() -> None:
     class FailingAudioHandler:
         def transcribe_audio(self, audio: np.ndarray) -> str:
@@ -304,3 +342,22 @@ def test_transcribe_audio_reports_dependency_error_on_whisper_failure() -> None:
     assert transcript == ""
     assert ui.state.mode == "stt_error"
     assert "mlx whisper model load failed" in ui.state.status_line
+
+
+def test_transcribe_audio_wake_scan_updates_transcript_and_response() -> None:
+    class SuccessfulAudioHandler:
+        def transcribe_audio(self, audio: np.ndarray) -> str:  # noqa: ARG002
+            return "hey lulu what time is it"
+
+    ui = TerminalUI(build_settings())
+
+    transcript = _transcribe_audio(
+        SuccessfulAudioHandler(),
+        ui,
+        np.zeros(160, dtype=np.float32),
+        wake_scan=True,
+    )
+
+    assert transcript == "hey lulu what time is it"
+    assert ui.state.transcript == "hey lulu what time is it"
+    assert ui.state.response == "Wake scan captured speech. Matching wake phrase..."

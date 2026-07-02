@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from difflib import SequenceMatcher
-from dataclasses import dataclass
 from collections.abc import Callable
+from collections import deque
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from pathlib import Path
 import queue
 import re
 import subprocess
 import tempfile
 import threading
 import wave
-from collections import deque
-from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -48,7 +48,7 @@ class PhraseChunker:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.buffer = ""
-        self._boundary_pattern = re.compile(r"(.+?[,\.;:!?])(\s+|$)", re.DOTALL)
+        self._sentence_boundary_pattern = re.compile(r"(.+?[.!?])(\s+|$)", re.DOTALL)
 
     def push(self, text: str) -> list[str]:
         if text:
@@ -82,29 +82,47 @@ class PhraseChunker:
         if len(self.buffer) < self.settings.tts_stream_min_chunk_chars:
             return None
 
-        last_good_end = None
-        for match in self._boundary_pattern.finditer(self.buffer):
-            candidate = self.buffer[: match.end(1)].strip()
-            if match.end(1) > self.settings.tts_stream_soft_chunk_chars:
+        sentence_break = self._find_grouped_sentence_break_before(
+            self.settings.tts_stream_soft_chunk_chars
+        )
+        if sentence_break is not None:
+            return self._pop_chunk(sentence_break)
+
+        if len(self.buffer) < self.settings.tts_stream_max_chunk_chars:
+            return None
+
+        sentence_break = self._find_grouped_sentence_break_before(
+            self.settings.tts_stream_max_chunk_chars
+        )
+        if sentence_break is not None:
+            return self._pop_chunk(sentence_break)
+
+        hard_break = self._find_break_before(self.settings.tts_stream_max_chunk_chars)
+        if hard_break is None:
+            hard_break = self.settings.tts_stream_max_chunk_chars
+        return self._pop_chunk(hard_break)
+
+    def _find_grouped_sentence_break_before(self, limit: int) -> int | None:
+        boundaries: list[int] = []
+        for match in self._sentence_boundary_pattern.finditer(self.buffer):
+            if match.end(1) > limit:
                 break
+            candidate = self.buffer[: match.end(1)].strip()
             if len(candidate) >= self.settings.tts_stream_min_chunk_chars:
-                last_good_end = match.end(1)
+                boundaries.append(match.end(1))
+        if not boundaries:
+            return None
 
-        if last_good_end is not None:
-            return self._pop_chunk(last_good_end)
+        max_sentences = max(1, self.settings.tts_stream_max_group_sentences)
+        best_group_end: int | None = None
+        for end_index in boundaries[:max_sentences]:
+            candidate = self.buffer[:end_index].strip()
+            if len(candidate) <= self.settings.tts_stream_group_target_chars:
+                best_group_end = end_index
 
-        if len(self.buffer) >= self.settings.tts_stream_soft_chunk_chars:
-            soft_break = self._find_break_before(self.settings.tts_stream_soft_chunk_chars)
-            if soft_break is not None:
-                return self._pop_chunk(soft_break)
-
-        if len(self.buffer) >= self.settings.tts_stream_max_chunk_chars:
-            hard_break = self._find_break_before(self.settings.tts_stream_max_chunk_chars)
-            if hard_break is None:
-                hard_break = self.settings.tts_stream_max_chunk_chars
-            return self._pop_chunk(hard_break)
-
-        return None
+        if best_group_end is not None:
+            return best_group_end
+        return boundaries[0]
 
     def _find_break_before(self, limit: int) -> int | None:
         capped = self.buffer[:limit]
@@ -167,8 +185,8 @@ class MacOSTTS:
             try:
                 if chunk is None:
                     return
-                # Phrase-boundary chunking is intentionally chosen for lower latency.
-                # This may be swapped later if sentence-level chunks sound smoother.
+                # Each chunk is spoken by macOS `say`; smoother playback comes from
+                # emitting fewer, larger chunks rather than restarting `say` too often.
                 try:
                     result = subprocess.run(
                         ["say", chunk],
@@ -212,30 +230,34 @@ class AudioHandler:
         return self._record_until_silence(
             max_record_seconds=self.settings.vad_max_record_seconds,
             min_speech_seconds=self.settings.vad_min_speech_seconds,
+            silence_seconds=self.settings.vad_silence_seconds,
+            pre_roll_chunks=3,
         )
 
     def record_wake_scan(self) -> np.ndarray | None:
         return self._record_until_silence(
             max_record_seconds=self.settings.wake_scan_max_record_seconds,
             min_speech_seconds=self.settings.wake_scan_min_speech_seconds,
+            silence_seconds=self.settings.wake_scan_silence_seconds,
+            pre_roll_chunks=self.settings.wake_scan_pre_roll_chunks,
         )
 
     def _record_until_silence(
         self,
         max_record_seconds: float,
         min_speech_seconds: float,
+        silence_seconds: float,
+        pre_roll_chunks: int,
     ) -> np.ndarray | None:
         sample_rate = self.settings.sample_rate
         frames_per_chunk = int(sample_rate * self.settings.vad_chunk_seconds)
         max_chunks = int(max_record_seconds / self.settings.vad_chunk_seconds)
-        silence_limit = max(
-            1, int(self.settings.vad_silence_seconds / self.settings.vad_chunk_seconds)
-        )
+        silence_limit = max(1, int(silence_seconds / self.settings.vad_chunk_seconds))
         min_speech_chunks = max(
             1,
             int(min_speech_seconds / self.settings.vad_chunk_seconds),
         )
-        pre_roll = deque(maxlen=3)
+        pre_roll = deque(maxlen=max(1, pre_roll_chunks))
         speech_frames: list[np.ndarray] = []
         speech_started = False
         silence_chunks = 0
@@ -349,19 +371,26 @@ def score_wake_phrase_match(
         return WakeMatch(matched=False, reason="too-short")
 
     best_score = 0.0
-    best_prefix_length = 0
+    best_end_index = 0
     best_prefix_text = ""
+    best_start_index = 0
 
-    for prefix_length in range(
-        len(wake_tokens), min(len(transcript_tokens), len(wake_tokens) + 1) + 1
-    ):
-        prefix_tokens = transcript_tokens[:prefix_length]
-        prefix_text = " ".join(prefix_tokens)
-        score = _wake_similarity_score(prefix_text, wake_phrase)
-        if score > best_score:
-            best_score = score
-            best_prefix_length = prefix_length
-            best_prefix_text = prefix_text
+    max_start_index = min(2, max(0, len(transcript_tokens) - len(wake_tokens)))
+    max_window_length = len(wake_tokens) + 2
+    for start_index in range(max_start_index + 1):
+        for prefix_length in range(
+            len(wake_tokens),
+            min(len(transcript_tokens) - start_index, max_window_length) + 1,
+        ):
+            end_index = start_index + prefix_length
+            prefix_tokens = transcript_tokens[start_index:end_index]
+            prefix_text = " ".join(prefix_tokens)
+            score = _wake_similarity_score(prefix_text, wake_phrase) - (start_index * 0.04)
+            if score > best_score:
+                best_score = score
+                best_start_index = start_index
+                best_end_index = end_index
+                best_prefix_text = prefix_text
 
     if best_score < threshold:
         return WakeMatch(
@@ -371,7 +400,7 @@ def score_wake_phrase_match(
             reason="below-threshold",
         )
 
-    remainder = " ".join(transcript_tokens[best_prefix_length:]).strip()
+    remainder = " ".join(transcript_tokens[best_end_index:]).strip()
     return WakeMatch(
         matched=True,
         remainder=remainder,

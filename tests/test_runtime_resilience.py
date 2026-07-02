@@ -95,6 +95,34 @@ def test_process_transcript_turn_preserves_partial_text_on_stream_failure() -> N
     assert "connection dropped mid-stream" in ui.state.status_line
 
 
+def test_process_transcript_turn_flushes_buffered_speech_on_stream_failure() -> None:
+    ui = TerminalUI(Settings())
+    router = FixedReplyRouter(
+        PreparedTurn(
+            final_messages=[{"role": "user", "content": "hi"}],
+            memory_hits=[],
+            saved_items=[],
+        )
+    )
+    ollama = StreamingOllamaClient(
+        ["Partial response"],
+        error=OllamaClientError("connection dropped mid-stream"),
+    )
+    tts = FakeTTS()
+
+    _process_transcript_turn(
+        transcript="hi",
+        settings=Settings(tts_stream_min_chunk_chars=8, tts_stream_soft_chunk_chars=24),
+        router=router,
+        ollama_client=ollama,
+        tts=tts,
+        ui=ui,
+    )
+
+    assert tts.enqueued_chunks == ["Partial response"]
+    assert tts.finished == 1
+
+
 def test_process_transcript_turn_keeps_final_text_when_tts_fails() -> None:
     ui = TerminalUI(Settings())
     router = FixedReplyRouter(

@@ -250,6 +250,7 @@ def _run_continuous_voice_loop(
 
         transcript = _transcribe_audio(audio_handler, ui, audio, wake_scan=True)
         if not transcript:
+            ui.set_response("Wake scan produced no transcript. Listening again...")
             continue
 
         wake_match = audio_handler.match_wake_phrase(transcript)
@@ -267,15 +268,20 @@ def _run_continuous_voice_loop(
                 accepted=False,
                 reason="self-audio-guard",
             )
+            ui.set_response("Wake rejected: self-audio-guard")
             ui.log_event("Rejected wake attempt due to self-audio guard.")
             continue
 
         if not wake_match.matched:
+            rejection_reason = wake_match.reason or "below-threshold"
             ui.record_wake_attempt(
                 transcript=transcript,
                 score=wake_match.score,
                 accepted=False,
-                reason=wake_match.reason or "below-threshold",
+                reason=rejection_reason,
+            )
+            ui.set_response(
+                f"Wake rejected: {rejection_reason} (score {wake_match.score:.2f})"
             )
             ui.log_event("Rejected wake attempt below threshold.")
             continue
@@ -310,6 +316,7 @@ def _run_continuous_voice_loop(
             ui.set_conversation_window_remaining(settings.conversation_window_seconds)
             cooldown_until = perf_counter() + settings.wake_cooldown_seconds
         else:
+            ui.set_response("Wake matched. Waiting for your request...")
             ui.set_mode(
                 "conversation_window",
                 f"Conversation window active: {settings.conversation_window_seconds:.1f}s remaining",
@@ -340,6 +347,9 @@ def _transcribe_audio(
         _handle_dependency_failure(ui, "stt_error", "Transcription failed", exc)
         return ""
     ui.record_latency("stt", perf_counter() - stt_start)
+    if wake_scan and transcript:
+        ui.set_transcript(transcript)
+        ui.set_response("Wake scan captured speech. Matching wake phrase...")
     return transcript
 
 
@@ -444,6 +454,7 @@ def _process_transcript_turn(
     try:
         for piece in _stream_and_chunk(
             stream_source=stream_source,
+            settings=settings,
             chunker=chunker,
             tts=tts,
             ui=ui,
@@ -452,10 +463,15 @@ def _process_transcript_turn(
             if not first_token_recorded and piece.strip():
                 ui.record_latency("first_token", perf_counter() - stream_start)
                 first_token_recorded = True
-            if speech_start is None and response_parts:
+            if speech_start is None and ui.state.emitted_chunk_count > 0:
                 speech_start = perf_counter()
     except Exception as exc:
         final_text = "".join(response_parts).strip()
+        flushed_chunks = _flush_chunker_tail(chunker=chunker, tts=tts, ui=ui)
+        if flushed_chunks:
+            ui.log_event(
+                f"Flushed {flushed_chunks} buffered speech chunk(s) after stream failure."
+            )
         if final_text:
             ui.set_response(final_text)
             ui.log_event("Preserved partial response text after stream failure.")
@@ -496,22 +512,79 @@ def _process_transcript_turn(
 
 def _stream_and_chunk(
     stream_source: Iterator[str],
+    settings: Settings,
     chunker: PhraseChunker,
     tts: MacOSTTS,
     ui: TerminalUI,
     response_parts: list[str],
 ) -> Iterator[str]:
+    playback_started = False
+    pending_chunks: list[str] = []
+
     for piece in stream_source:
         response_parts.append(piece)
         ui.set_response("".join(response_parts).strip())
         for chunk in chunker.push(piece):
-            tts.enqueue_chunk(chunk)
-            ui.record_emitted_chunk(chunk)
+            if playback_started:
+                _emit_chunk(tts=tts, ui=ui, chunk=chunk)
+            else:
+                pending_chunks.append(chunk)
+        if not playback_started and _should_start_playback(
+            settings=settings,
+            pending_chunks=pending_chunks,
+        ):
+            _emit_pending_chunks(tts=tts, ui=ui, pending_chunks=pending_chunks)
+            playback_started = True
         yield piece
 
     for chunk in chunker.finish():
-        tts.enqueue_chunk(chunk)
-        ui.record_emitted_chunk(chunk)
+        if playback_started:
+            _emit_chunk(tts=tts, ui=ui, chunk=chunk)
+        else:
+            pending_chunks.append(chunk)
+    _emit_pending_chunks(tts=tts, ui=ui, pending_chunks=pending_chunks)
+
+
+def _should_start_playback(
+    settings: Settings,
+    pending_chunks: list[str],
+) -> bool:
+    if not pending_chunks:
+        return False
+    buffered_chars = sum(len(chunk) for chunk in pending_chunks)
+    if len(pending_chunks) >= 2:
+        return True
+    return buffered_chars >= settings.tts_stream_start_buffer_chars
+
+
+def _emit_pending_chunks(
+    tts: MacOSTTS,
+    ui: TerminalUI,
+    pending_chunks: list[str],
+) -> None:
+    while pending_chunks:
+        _emit_chunk(tts=tts, ui=ui, chunk=pending_chunks.pop(0))
+
+
+def _emit_chunk(
+    tts: MacOSTTS,
+    ui: TerminalUI,
+    chunk: str,
+) -> None:
+    tts.enqueue_chunk(chunk)
+    ui.record_emitted_chunk(chunk)
+
+
+def _flush_chunker_tail(
+    chunker: PhraseChunker,
+    tts: MacOSTTS,
+    ui: TerminalUI,
+) -> int:
+    flushed_chunks = 0
+    for chunk in chunker.finish():
+        _emit_chunk(tts=tts, ui=ui, chunk=chunk)
+        flushed_chunks += 1
+    return flushed_chunks
 
 
 def _next_conversation_deadline(settings: Settings) -> float:

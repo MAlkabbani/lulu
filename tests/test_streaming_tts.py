@@ -30,18 +30,21 @@ class FakeTTS:
 def build_settings() -> Settings:
     return Settings(
         tts_stream_min_chunk_chars=8,
-        tts_stream_soft_chunk_chars=24,
-        tts_stream_max_chunk_chars=40,
+        tts_stream_start_buffer_chars=18,
+        tts_stream_group_target_chars=32,
+        tts_stream_max_group_sentences=2,
+        tts_stream_soft_chunk_chars=32,
+        tts_stream_max_chunk_chars=56,
     )
 
 
-def test_phrase_chunker_emits_phrase_boundary_chunks() -> None:
+def test_phrase_chunker_emits_sentence_boundary_chunks() -> None:
     chunker = PhraseChunker(build_settings())
 
-    ready = chunker.push("Thanks, I found your note, and")
+    ready = chunker.push("Thanks for the note. I found it.")
 
-    assert ready == ["Thanks, I found your"]
-    assert chunker.finish() == ["note, and"]
+    assert ready == ["Thanks for the note. I found it."]
+    assert chunker.finish() == []
 
 
 def test_phrase_chunker_flushes_tail_without_punctuation() -> None:
@@ -49,8 +52,8 @@ def test_phrase_chunker_flushes_tail_without_punctuation() -> None:
 
     ready = chunker.push("This stays buffered until the end")
 
-    assert ready == ["This stays buffered"]
-    assert chunker.finish() == ["until the end"]
+    assert ready == []
+    assert chunker.finish() == ["This stays buffered until the end"]
 
 
 def test_phrase_chunker_does_not_emit_short_leading_punctuation_chunk() -> None:
@@ -67,6 +70,36 @@ def test_phrase_chunker_does_not_emit_short_leading_punctuation_chunk() -> None:
     assert ready == ["Sure, I can help with that request right now."]
 
 
+def test_phrase_chunker_waits_for_sentence_boundary_before_force_split() -> None:
+    chunker = PhraseChunker(Settings())
+
+    ready = chunker.push(
+        "This response keeps going without punctuation so the current chunker waits for a full sentence instead of chopping the audio early"
+    )
+
+    assert ready == []
+    assert chunker.finish() == [
+        "This response keeps going without punctuation so the current chunker waits for a full sentence instead of chopping the audio early"
+    ]
+
+
+def test_phrase_chunker_groups_two_short_sentences_into_one_chunk() -> None:
+    chunker = PhraseChunker(
+        Settings(
+            tts_stream_min_chunk_chars=8,
+            tts_stream_group_target_chars=28,
+            tts_stream_max_group_sentences=2,
+            tts_stream_soft_chunk_chars=28,
+            tts_stream_max_chunk_chars=80,
+        )
+    )
+
+    ready = chunker.push("Short one. Short two. Third sentence.")
+
+    assert ready == ["Short one. Short two.", "Third sentence."]
+    assert chunker.finish() == []
+
+
 def test_stream_and_chunk_accumulates_text_and_emits_in_order() -> None:
     chunker = PhraseChunker(build_settings())
     tts = FakeTTS()
@@ -76,6 +109,7 @@ def test_stream_and_chunk_accumulates_text_and_emits_in_order() -> None:
     streamed = list(
         _stream_and_chunk(
             stream_source=iter(["Hello there, ", "friend."]),
+            settings=build_settings(),
             chunker=chunker,
             tts=tts,
             ui=ui,
@@ -85,8 +119,38 @@ def test_stream_and_chunk_accumulates_text_and_emits_in_order() -> None:
 
     assert streamed == ["Hello there, ", "friend."]
     assert "".join(response_parts) == "Hello there, friend."
-    assert tts.chunks == ["Hello there,", "friend."]
-    assert ui.emitted_chunks == ["Hello there,", "friend."]
+    assert tts.chunks == ["Hello there, friend."]
+    assert ui.emitted_chunks == ["Hello there, friend."]
+
+
+def test_stream_and_chunk_delays_first_playback_until_buffer_threshold() -> None:
+    settings = Settings(
+        tts_stream_min_chunk_chars=8,
+        tts_stream_start_buffer_chars=40,
+        tts_stream_group_target_chars=26,
+        tts_stream_max_group_sentences=1,
+        tts_stream_soft_chunk_chars=28,
+        tts_stream_max_chunk_chars=56,
+    )
+    chunker = PhraseChunker(settings)
+    tts = FakeTTS()
+    ui = FakeUI()
+    response_parts: list[str] = []
+
+    stream = _stream_and_chunk(
+        stream_source=iter(["Hello world. ", "Another sentence."]),
+        settings=settings,
+        chunker=chunker,
+        tts=tts,
+        ui=ui,
+        response_parts=response_parts,
+    )
+
+    assert next(stream) == "Hello world. "
+    assert tts.chunks == []
+    assert next(stream) == "Another sentence."
+    assert tts.chunks == ["Hello world.", "Another sentence."]
+    assert list(stream) == []
 
 
 def test_macos_tts_queue_preserves_chunk_order(monkeypatch) -> None:
