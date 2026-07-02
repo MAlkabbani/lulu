@@ -17,6 +17,7 @@ This current product baseline is designed for a Mac M1 workflow in July 2026:
 - [Reconstructed Product Requirements Document](./docs/prd.md)
 - [Decision Log](./docs/decision-log.md)
 - [Wake Performance Report](./docs/wake-performance-report.md)
+- [Comparative Research Report: Lulu And local-talking-llm](./docs/local-talking-llm-comparative-research-report.md)
 - [Original Project Blueprint](./Project_Blueprint_AI_Assistant.md)
 
 Use these docs by role:

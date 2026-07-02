@@ -8,6 +8,7 @@ This directory is the public, version-controlled documentation surface for Lulu 
 - [Product Requirements Document](./prd.md)
 - [Decision Log](./decision-log.md)
 - [Wake Performance Report](./wake-performance-report.md)
+- [Comparative Research Report: Lulu And local-talking-llm](./local-talking-llm-comparative-research-report.md)
 - [Project Blueprint](../Project_Blueprint_AI_Assistant.md)
 
 ## Current Product Baseline
