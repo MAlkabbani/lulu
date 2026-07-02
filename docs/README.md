@@ -6,6 +6,7 @@ This directory is the public documentation surface for Lulu VAIA.
 
 - [Architecture](./architecture.md)
 - [Operations Runbook](./operations.md)
+- [PDF To Audiobooks](./pdf-audiobooks.md)
 - [Product Requirements](./prd.md)
 - [Decision Log](./decision-log.md)
 - [Wake Performance Report](./wake-performance-report.md)
@@ -17,6 +18,7 @@ This directory is the public documentation surface for Lulu VAIA.
 
 - `architecture.md`: current module responsibilities, runtime flow, and dependency boundaries
 - `operations.md`: install, startup, verification, and troubleshooting workflows
+- `pdf-audiobooks.md`: local PDF ingestion, cleanup, audiobook export, and limitations
 - `prd.md`: product scope, requirements, and user stories
 - `decision-log.md`: why major technical choices were made
 - `wake-performance-report.md`: benchmark framing and wake-system results

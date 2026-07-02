@@ -34,6 +34,7 @@ Support ongoing development: [Buy Me a Coffee](https://buymeacoffee.com/webeworx
 - [Documentation Index](./docs/README.md)
 - [Architecture](./docs/architecture.md)
 - [Operations Runbook](./docs/operations.md)
+- [PDF To Audiobooks](./docs/pdf-audiobooks.md)
 - [Product Requirements](./docs/prd.md)
 - [Decision Log](./docs/decision-log.md)
 - [Wake Performance Report](./docs/wake-performance-report.md)
@@ -50,6 +51,7 @@ Support ongoing development: [Buy Me a Coffee](https://buymeacoffee.com/webeworx
 - bounded memory tool orchestration through Ollama native tool calls
 - ChromaDB-backed canonical memory with deduplication and metadata
 - streamed, clause-aware TTS chunking on top of macOS `say`
+- offline PDF-to-audiobook export for text-based PDFs, with optional local portable conversion
 - rich terminal observability for mode, wake, latency, memory, and action flow
 
 ## Quick Start
@@ -69,6 +71,12 @@ Helpful variants:
 ./scripts/start_lulu.sh --check
 ./scripts/start_lulu.sh --mode text
 ./scripts/start_lulu.sh --mode turn-based
+```
+
+Offline PDF-to-audiobook preview:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf --dry-run
 ```
 
 ## Manual Setup
@@ -132,6 +140,78 @@ This bypasses the chat model and writes a canonical memory entry directly.
 
 Normal user turns can recall memories, inspect recent entries, explain a prior memory hit, or save a durable fact through the validated backend tool registry.
 
+### Offline PDF Audiobooks
+
+Lulu also ships a repo-local offline audiobook utility for text-based PDFs:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --title "My Local Book" \
+  --author "Example Author" \
+  --output-dir ./outputs/audiobooks \
+  --portable-format m4a
+```
+
+This workflow:
+
+- validates local PDF paths and rejects encrypted or corrupted files safely
+- cleans common PDF artifacts such as repeated headers, footers, page numbers, and broken wraps
+- detects chapter boundaries conservatively, including short title-like subtitles after chapter headings
+- writes cleaned text plus local AIFF section files with native macOS `say`
+- can optionally post-process those AIFF files into `wav`, `m4a`, or `mp3` with local `ffmpeg`
+- stops on scanned or image-only PDFs and reports that OCR is currently deferred
+
+## How To Use PDF Audiobooks
+
+End-user flow from the repo root:
+
+1. Install the repo dependencies and activate `.venv`.
+2. Run a dry-run first to confirm Lulu can read and clean the PDF text.
+3. Generate AIFF chapter files once the preview looks right.
+4. Add `--portable-format` only if you also want `wav`, `m4a`, or `mp3` copies.
+5. Open the generated book folder under `outputs/audiobooks/` and use `manifest.json` as the run summary.
+
+Recommended first run:
+
+```bash
+source .venv/bin/activate
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf --dry-run
+```
+
+If the preview looks good, generate audio:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --title "My Local Book" \
+  --author "Example Author" \
+  --output-dir ./outputs/audiobooks
+```
+
+If you also want a more portable local format:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --title "My Local Book" \
+  --author "Example Author" \
+  --output-dir ./outputs/audiobooks \
+  --portable-format m4a
+```
+
+What the end-user gets:
+
+- `text/full_text.txt`: cleaned full-book text
+- `text/*.txt`: per-section text files after chapter splitting
+- `audio/*.aiff`: default local audio exports from macOS `say`
+- `audio/*.<format>`: optional portable copies when `--portable-format` is used
+- `manifest.json`: metadata, extraction summary, output file list, and limitations
+
+When to expect a refusal instead of output:
+
+- the PDF is encrypted
+- the PDF is corrupted or unsupported
+- the PDF is scanned or image-only and yields no extractable text
+- `--portable-format` was requested but `ffmpeg` is not installed
+
 ### Wake Flow
 
 The wake pipeline uses a hybrid strategy:
@@ -187,10 +267,12 @@ Microphone
 ├── main.py
 ├── memory_manager.py
 ├── ollama_client.py
+├── pdf_audiobook.py
 ├── pyproject.toml
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── scripts/
+│   └── pdf_to_audiobook.py
 ├── terminal_ui.py
 ├── tests/
 ├── wake_benchmark.py
