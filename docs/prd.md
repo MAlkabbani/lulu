@@ -110,7 +110,7 @@ The product supports three runtime modes:
 - Durable fact: a user fact expected to remain useful across future turns, such as a preference, relationship, routine, or schedule detail stated as plain text.
 - Backend tags: 1-3 locally assigned free-form labels used to improve memory recall context quality.
 - Semantic slot: the conceptual fact bucket used to decide whether a new memory updates an existing canonical fact instead of creating a duplicate.
-- Low perceived latency: response behavior optimized to start useful feedback quickly, especially through phrase-boundary streaming rather than waiting for the full model response.
+- Low perceived latency: response behavior optimized to start useful feedback quickly through grouped smoothness-first streaming rather than waiting for the full model response.
 - Always-available: Lulu can remain ready in passive listening mode on a supported Mac, but it is still bounded by local device resources, permissions, and model availability.
 
 ### 6.2 Current Operating Defaults
@@ -118,6 +118,7 @@ The product supports three runtime modes:
 The current shipped baseline uses these defaults unless overridden by environment configuration:
 
 - wake phrase: `hey lulu`
+- practical voice preset: available, but disabled by default
 - memory recall depth: top `3` memories
 - conversation window: `12.0` seconds
 - wake cooldown: `1.2` seconds
@@ -442,8 +443,8 @@ As an end user, I want Lulu to start speaking before the full reply is complete 
 
 Acceptance criteria:
 
-- Given a generated reply longer than a short phrase, when streaming tokens arrive, then Lulu emits phrase-sized chunks as they become available.
-- Given a streamed reply, when a phrase chunk is ready, then it is queued for TTS in order.
+- Given a generated reply longer than a short phrase, when streaming tokens arrive, then Lulu groups text into smoothness-first chunks that prefer sentence boundaries before falling back to clause-aware breaks or hard splits.
+- Given a streamed reply, when a grouped chunk is ready, then it is queued for TTS in order.
 
 #### Story C2
 
@@ -493,8 +494,8 @@ As a developer or maintainer, I want to see live runtime state so that I can deb
 Acceptance criteria:
 
 - Given the terminal dashboard is running, when Lulu changes mode or completes a turn stage, then the relevant UI panels update.
-- Given wake scanning is active, when a wake attempt is evaluated, then accepted or rejected counts and recent attempts are visible.
-- Given a completed turn, when the user reviews the UI, then latency snapshots and recent events are available.
+- Given wake scanning is active, when a wake attempt is evaluated, then accepted or rejected counts, recent attempts, success rate, average wake score, top rejection reasons, and guidance are visible.
+- Given a completed turn, when the user reviews the UI, then latency snapshots, speech continuity indicators, and recent events are available.
 
 #### Story E2
 
@@ -535,6 +536,7 @@ These metrics formalize product outcomes that were implicit in the implementatio
 
 - Wake performance depends on transcription quality because wake detection is transcript-gated instead of using a dedicated wake-word model.
 - Native macOS `say` lowers setup complexity but limits voice quality and interruption control.
+- Native macOS `say` still restarts per chunk, so some seams can remain even with grouped playback and tail-merge heuristics.
 - Canonical memory improves recall quality but does not yet provide a full memory revision history for user-facing audit trails.
 - Low perceived latency is a product goal, but explicit benchmark thresholds are still an area for future instrumentation work.
 - The current product prioritizes a single-user local workflow and does not address multi-device synchronization or collaboration.
@@ -546,8 +548,8 @@ These metrics formalize product outcomes that were implicit in the implementatio
 - local voice and text interaction
 - hybrid memory routing
 - canonical semantic memory
-- chunked streamed TTS
-- continuous listening and wake gating
+- grouped smoothness-first streamed TTS
+- continuous listening, scored wake gating, and wake guidance diagnostics
 - observability-focused terminal dashboard
 
 ### 13.2 Next Likely Extensions
@@ -572,3 +574,4 @@ The reconstructed requirements align with shipped implementation coverage in:
 | Date | Version | Change | Author |
 | --- | --- | --- | --- |
 | 2026-07-01 | 1.0 | Initial reconstructed PRD created from code, tests, README, blueprint, and implementation plans | Repository documentation update |
+| 2026-07-02 | 1.1 | Aligned product wording with grouped streamed TTS, wake guidance metrics, and current dashboard observability | Repository documentation update |

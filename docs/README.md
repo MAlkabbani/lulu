@@ -16,9 +16,9 @@ The current documented product baseline includes:
 - fully local Apple Silicon-first runtime on macOS
 - hybrid memory routing with explicit and autonomous save paths
 - canonical semantic memory deduplication with backend tagging
-- phrase-boundary streamed TTS on top of native macOS `say`
-- continuous listening with wake phrase detection, cooldown, and self-audio suppression
-- terminal observability for runtime mode, latency, memory, and wake diagnostics
+- grouped, smoothness-first streamed TTS on top of native macOS `say`
+- continuous listening with scored wake matching, cooldown, self-audio suppression, and optional practical voice tuning
+- terminal observability for runtime mode, speech continuity, latency, memory, and wake diagnostics
 
 ## Engineering Plans And Implementation History
 
@@ -27,6 +27,8 @@ These tracked implementation plans explain how major shipped milestones were sco
 - [A1 Memory Deduplication And Categories](./implementation-plans/a1-memory-deduplication-and-categories.md)
 - [B1 Chunked TTS Streaming](./implementation-plans/b1-chunked-tts-streaming.md)
 - [C1 Wake-Word And Continuous Listening](./implementation-plans/c1-wake-word-continuous-listening.md)
+
+These plans are historical milestone records. When the shipped runtime later evolves beyond an original plan, treat `README.md`, `docs/prd.md`, and `docs/decision-log.md` as the current source of truth for present-day behavior.
 
 ## How To Use These Docs
 

@@ -220,6 +220,8 @@ The reliable continuous-listening flow is:
 
 If live wake capture still feels fragile in your room, enable `PRACTICAL_VOICE_MODE="true"` in `.env` and restart Lulu. That preset makes the wake scan slightly more forgiving and gives you a longer follow-up window after a successful wake.
 
+Before changing more knobs, use the wake debug panel to check the session success rate, average wake score, top rejection reasons, and current guidance. Those signals usually tell you whether the issue is short captures, low-confidence phrase matching, or self-audio suppression.
+
 ### Speech output sounds choppy
 
 The runtime now uses grouped smoothness-first playback with delayed first speech, clause-aware chunk breaks, and short-tail merging. If seams are still noticeable in your environment, use turn-based mode to isolate whether the issue is specific to continuous voice flow:

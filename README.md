@@ -385,11 +385,12 @@ The terminal now shows a small live dashboard with:
 
 - current assistant mode such as `passive_listening`, `conversation_window`, `thinking`, and `speaking`
 - a visible runtime badge showing `CONTINUOUS`, `TURN-BASED`, or `TEXT`
-- a wake debug panel with the current score threshold, accepted/rejected counters, session success rate, average wake score, top rejection reasons, score bins, guidance, and recent accepted/rejected wake attempts
+- a wake debug panel with the current score threshold, voice profile, accepted/rejected counters, session success rate, average wake score, top rejection reasons, score bins, guidance, and recent accepted/rejected wake attempts
 - latest transcript and spoken response
+- speech continuity indicators such as chunk counts, average chunk size, tail merges, and buffer gaps
 - recent memory saves
 - a recent-turn event log for capture, transcription, recall, save, and response milestones
-- per-turn latency snapshots for capture, STT, router, first token, first spoken chunk, TTS, and total turn time
+- per-turn latency snapshots for capture, STT, router, first token, first spoken chunk, TTS, stream total, and total turn time
 
 Replies now stream into speech in grouped, smoothness-first chunks, so Lulu can begin talking before the full response is complete. The current policy buffers the first spoken chunk, prefers sentence boundaries, falls back to clause-aware breaks before hard splits, and merges tiny final tails backward when safe. This still favors lower latency than full-response playback, but some seams can remain because native macOS `say` is restarted per chunk.
 
@@ -489,7 +490,7 @@ export LULU_MAX_RESTARTS="2"
 export LULU_RESTART_BACKOFF_SECONDS="2"
 ```
 
-Set `PRACTICAL_VOICE_MODE="true"` if you want Lulu to use a slightly more forgiving wake profile for everyday voice use. That preset lengthens the wake scan window, keeps a little more pre-roll, slightly relaxes the score threshold, and gives you a longer follow-up window after a successful wake.
+Set `PRACTICAL_VOICE_MODE="true"` if you want Lulu to use a slightly more forgiving wake profile for everyday voice use. That preset lengthens the wake scan window, keeps a little more pre-roll, slightly relaxes the score threshold, and gives you a longer follow-up window after a successful wake. The dashboard will also switch its voice-profile badge from `default` to `practical` so you can see which wake profile is active.
 
 ## Important Implementation Notes
 
