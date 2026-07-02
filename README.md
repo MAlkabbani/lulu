@@ -1,5 +1,9 @@
 # Lulu VAIA
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Support: Buy Me a Coffee](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/webeworx)
+[![Platform: macOS Apple Silicon](https://img.shields.io/badge/Platform-macOS%20Apple%20Silicon-111111?logo=apple&logoColor=white)](./docs/operations.md)
+
 ```text
  _      _   _      _   _
 | |    | | | |    | | | |
