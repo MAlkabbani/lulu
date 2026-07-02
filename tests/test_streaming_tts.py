@@ -40,8 +40,8 @@ def test_phrase_chunker_emits_phrase_boundary_chunks() -> None:
 
     ready = chunker.push("Thanks, I found your note, and")
 
-    assert ready == ["Thanks,", "I found your note,"]
-    assert chunker.finish() == ["and"]
+    assert ready == ["Thanks, I found your"]
+    assert chunker.finish() == ["note, and"]
 
 
 def test_phrase_chunker_flushes_tail_without_punctuation() -> None:
@@ -51,6 +51,20 @@ def test_phrase_chunker_flushes_tail_without_punctuation() -> None:
 
     assert ready == ["This stays buffered"]
     assert chunker.finish() == ["until the end"]
+
+
+def test_phrase_chunker_does_not_emit_short_leading_punctuation_chunk() -> None:
+    chunker = PhraseChunker(
+        Settings(
+            tts_stream_min_chunk_chars=24,
+            tts_stream_soft_chunk_chars=72,
+            tts_stream_max_chunk_chars=140,
+        )
+    )
+
+    ready = chunker.push("Sure, I can help with that request right now.")
+
+    assert ready == ["Sure, I can help with that request right now."]
 
 
 def test_stream_and_chunk_accumulates_text_and_emits_in_order() -> None:

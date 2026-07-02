@@ -12,10 +12,12 @@ class Settings:
     chat_model: str = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:3b")
     embedding_model: str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
     whisper_model: str = os.getenv(
-        "MLX_WHISPER_MODEL", "mlx-community/whisper-tiny-mlx"
+        "MLX_WHISPER_MODEL", "mlx-community/whisper-base-mlx"
     )
+    whisper_language: str = os.getenv("MLX_WHISPER_LANGUAGE", "en")
     chroma_path: Path = Path(os.getenv("CHROMA_PATH", "./vault_db"))
     chroma_collection: str = os.getenv("CHROMA_COLLECTION", "lulu_memory")
+    audio_input_device: str = os.getenv("AUDIO_INPUT_DEVICE", "").strip()
     sample_rate: int = int(os.getenv("AUDIO_SAMPLE_RATE", "16000"))
     channels: int = int(os.getenv("AUDIO_CHANNELS", "1"))
     vad_threshold: float = float(os.getenv("VAD_THRESHOLD", "0.015"))

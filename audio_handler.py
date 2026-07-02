@@ -84,10 +84,11 @@ class PhraseChunker:
 
         last_good_end = None
         for match in self._boundary_pattern.finditer(self.buffer):
-            if match.end(1) <= self.settings.tts_stream_soft_chunk_chars:
-                last_good_end = match.end(1)
-            else:
+            candidate = self.buffer[: match.end(1)].strip()
+            if match.end(1) > self.settings.tts_stream_soft_chunk_chars:
                 break
+            if len(candidate) >= self.settings.tts_stream_min_chunk_chars:
+                last_good_end = match.end(1)
 
         if last_good_end is not None:
             return self._pop_chunk(last_good_end)
@@ -241,6 +242,7 @@ class AudioHandler:
 
         try:
             with sd.InputStream(
+                device=_resolve_input_device(self.settings.audio_input_device),
                 samplerate=sample_rate,
                 channels=self.settings.channels,
                 dtype="float32",
@@ -286,6 +288,7 @@ class AudioHandler:
                 result = transcribe(
                     str(wav_path),
                     path_or_hf_repo=self.settings.whisper_model,
+                    language=self.settings.whisper_language,
                 )
             except Exception as exc:
                 raise AudioTranscriptionError(
@@ -405,8 +408,17 @@ def text_similarity(left: str, right: str) -> float:
     return SequenceMatcher(None, normalized_left, normalized_right).ratio()
 
 
+def _resolve_input_device(device: str) -> int | str | None:
+    selected = device.strip()
+    if not selected:
+        return None
+    return int(selected) if selected.isdigit() else selected
+
+
 def _wake_signature(text: str) -> str:
     tokens = [_normalize_wake_token(token) for token in text.split()]
+    if len(tokens) >= 2 and tokens[0] == "i" and tokens[1] in {"love", "like"}:
+        tokens = ["hey", "lulu", *tokens[2:]]
     collapsed: list[str] = []
     index = 0
 

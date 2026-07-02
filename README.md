@@ -256,8 +256,8 @@ ollama pull nomic-embed-text
 
 Optional STT model choice is configured by environment variable:
 
-- Fastest default: `mlx-community/whisper-tiny-mlx`
-- Better accuracy: `mlx-community/whisper-base-mlx`
+- Default for reliable wake detection: `mlx-community/whisper-base-mlx`
+- Faster but less reliable for wake mode: `mlx-community/whisper-tiny-mlx`
 
 ### 5. Verify Ollama
 
@@ -280,6 +280,14 @@ python main.py
 ```
 
 Lulu now runs in always-on passive listening mode by default. It waits for the fixed wake phrase `hey lulu`, uses a conservative scored matcher to tolerate common Whisper-style confusions such as `hay lou lou`, opens a 12-second follow-up conversation window, then returns to passive listening automatically after the window expires.
+
+Recommended voice flow:
+
+- Say only `hey lulu`
+- Wait for the conversation window to open in the dashboard
+- Then say your request, such as `what time is it`
+
+Inline requests like `hey lulu what time is it` can still work, but the two-step flow is more reliable because the wake-scan path is intentionally short and optimized for detection first.
 
 The terminal now shows a small live dashboard with:
 
@@ -339,7 +347,9 @@ You can override defaults without changing code:
 export OLLAMA_BASE_URL="http://localhost:11434"
 export OLLAMA_CHAT_MODEL="llama3.2:3b"
 export OLLAMA_EMBED_MODEL="nomic-embed-text"
-export MLX_WHISPER_MODEL="mlx-community/whisper-tiny-mlx"
+export MLX_WHISPER_MODEL="mlx-community/whisper-base-mlx"
+export MLX_WHISPER_LANGUAGE="en"
+export AUDIO_INPUT_DEVICE=""
 export CHROMA_PATH="./vault_db"
 export CHROMA_COLLECTION="lulu_memory"
 export VAD_THRESHOLD="0.015"
@@ -424,8 +434,9 @@ python -m pytest -q
 
 ## Tuning Tips For M1
 
-- Use `mlx-community/whisper-tiny-mlx` for the lowest STT latency
-- Move to `mlx-community/whisper-base-mlx` if recall quality matters more than raw speed
+- Use `mlx-community/whisper-base-mlx` for the most reliable wake detection and everyday voice use
+- Move to `mlx-community/whisper-tiny-mlx` only if you need lower STT latency and can tolerate weaker wake recognition
+- Keep `MLX_WHISPER_LANGUAGE="en"` for the default `hey lulu` wake phrase unless you are intentionally changing Lulu to another spoken language
 - Keep the chat model small for fast turn-taking
 - If memory recall feels noisy, reduce `TOP_K_MEMORIES` to `2`
 - If VAD misses speech, lower `VAD_THRESHOLD`
@@ -582,10 +593,43 @@ If MLX Whisper fails to load or transcribe, Lulu reports the turn as a transcrip
 Try the smaller model first:
 
 ```bash
-export MLX_WHISPER_MODEL="mlx-community/whisper-tiny-mlx"
+export MLX_WHISPER_MODEL="mlx-community/whisper-base-mlx"
+export MLX_WHISPER_LANGUAGE="en"
 source .venv/bin/activate
 python main.py --turn-based
 ```
+
+### Wake phrase is never detected
+
+If the wake debug panel shows repeated rejected attempts and the transcript looks like unrelated text or another language, pin Whisper to English for the default `hey lulu` wake phrase:
+
+```bash
+export MLX_WHISPER_LANGUAGE="en"
+source .venv/bin/activate
+python main.py
+```
+
+If you intentionally want a non-English speaking experience, change both the wake phrase and the Whisper language together.
+
+### Lulu is listening to the wrong microphone
+
+Lulu uses the current macOS input device unless you override it. If wake transcripts look nothing like what you said, check the active input device and, if needed, force Lulu to a specific microphone:
+
+```bash
+export AUDIO_INPUT_DEVICE="MacBook Air Microphone"
+source .venv/bin/activate
+python main.py
+```
+
+You can also use a numeric device index if needed. On the debug machine used during development, for example, `sounddevice` reported:
+
+```text
+default= [3, 4]
+1 MacBook Air Microphone
+3 AIWA Headphone HP-04
+```
+
+In that situation, leaving `AUDIO_INPUT_DEVICE` empty makes Lulu follow the OS default input, while setting `AUDIO_INPUT_DEVICE="MacBook Air Microphone"` forces the built-in mic.
 
 ### TTS playback fails or text appears without speech
 
@@ -605,6 +649,12 @@ Use:
 
 ```bash
 export MLX_WHISPER_MODEL="mlx-community/whisper-tiny-mlx"
+```
+
+If wake recognition quality drops after switching to `whisper-tiny`, move back to:
+
+```bash
+export MLX_WHISPER_MODEL="mlx-community/whisper-base-mlx"
 ```
 
 ### No memories are being recalled

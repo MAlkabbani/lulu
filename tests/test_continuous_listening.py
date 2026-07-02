@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from pathlib import Path
 import numpy as np
 
 from audio_handler import (
@@ -8,6 +9,7 @@ from audio_handler import (
     AudioHandler,
     AudioTranscriptionError,
     WakeMatch,
+    _resolve_input_device,
     text_similarity,
 )
 from config import Settings
@@ -46,6 +48,27 @@ def test_match_wake_phrase_accepts_bare_phrase() -> None:
     assert result.score >= 0.99
 
 
+def test_transcribe_audio_uses_configured_whisper_language(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_transcribe(path: str, path_or_hf_repo: str, language: str) -> dict[str, str]:
+        captured["path"] = path
+        captured["model"] = path_or_hf_repo
+        captured["language"] = language
+        return {"text": "hey lulu"}
+
+    monkeypatch.setattr("audio_handler.transcribe", fake_transcribe)
+    settings = build_settings()
+    handler = AudioHandler(settings)
+
+    transcript = handler.transcribe_audio(np.zeros(160, dtype=np.float32))
+
+    assert transcript == "hey lulu"
+    assert captured["model"] == settings.whisper_model
+    assert captured["language"] == settings.whisper_language
+    assert Path(str(captured["path"])).suffix == ".wav"
+
+
 def test_match_wake_phrase_extracts_inline_request() -> None:
     handler = AudioHandler(build_settings())
 
@@ -73,6 +96,22 @@ def test_match_wake_phrase_accepts_scored_whisper_confusion() -> None:
     assert result.matched is True
     assert result.remainder == "set a timer"
     assert result.score >= 0.86
+
+
+def test_match_wake_phrase_accepts_i_love_prefix_confusion() -> None:
+    handler = AudioHandler(build_settings())
+
+    result = handler.match_wake_phrase("I love what time it is")
+
+    assert result.matched is True
+    assert result.remainder == "what time it is"
+    assert result.score >= 0.86
+
+
+def test_resolve_input_device_accepts_blank_numeric_and_named_values() -> None:
+    assert _resolve_input_device("") is None
+    assert _resolve_input_device("1") == 1
+    assert _resolve_input_device("MacBook Air Microphone") == "MacBook Air Microphone"
 
 
 def test_match_wake_phrase_rejects_non_wake_transcript() -> None:
