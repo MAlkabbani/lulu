@@ -478,8 +478,23 @@ def _process_transcript_turn(
     ui.record_latency("router", perf_counter() - router_start)
     ui.set_memory_hits(len(prepared.memory_hits))
     ui.log_event(f"Retrieved {len(prepared.memory_hits)} memory hit(s).")
+    ui.set_invocation(prepared.invocation_path, prepared.invocation_summary)
+    ui.log_event(prepared.invocation_summary)
+    for trace in prepared.tool_traces:
+        ui.record_tool_activity(trace.tool_name, trace.stage, trace.detail)
     if prepared.saved_items:
         ui.add_saved_items(prepared.saved_items)
+
+    if prepared.invocation_path == "explicit_save":
+        ui.set_mode("thinking", "Deterministic memory save accepted. Preparing spoken confirmation...")
+    elif prepared.tool_traces:
+        final_tool_stage = prepared.tool_traces[-1].stage
+        if final_tool_stage == "failed":
+            ui.set_mode("thinking", "Backend action was rejected safely. Generating a reply...")
+        else:
+            ui.set_mode("thinking", "Backend action completed. Generating a reply...")
+    else:
+        ui.set_mode("thinking", "No backend action requested. Generating a reply...")
 
     if not prepared.fixed_reply and not prepared.final_messages:
         ui.record_latency("total", perf_counter() - turn_start)

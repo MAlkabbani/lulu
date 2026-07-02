@@ -88,6 +88,22 @@ For normal speech, Lulu will:
 
 The router intentionally allows only one tool-execution round per turn to avoid recursive tool loops.
 
+### Memory Invocation Tips
+
+Use the deterministic path when you want a guaranteed save:
+
+- `insert info my dog's name is Nori`
+
+Use natural language when you want Lulu to decide whether a durable fact should be saved:
+
+- `please remember my dentist appointment is Friday at 2 PM`
+- `remember that I prefer jasmine tea`
+
+Use normal chat when you only want an answer and no backend action:
+
+- `what tea do I like?`
+- `summarize my morning schedule`
+
 ### Canonical Memory Rules
 
 Lulu now stores long-term memory as canonical records:
@@ -555,6 +571,8 @@ Validation or execution failures use the same envelope with `ok: false` and a st
   }
 }
 ```
+
+The terminal dashboard now surfaces the invocation path for each turn and the current tool state, including selected, running, succeeded, failed, and the latest tool-result summary.
 
 ### Safety Guardrails
 
