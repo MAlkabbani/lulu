@@ -8,6 +8,7 @@ This runbook documents the production-style install and startup workflows for Lu
 - Repo-local Python environment setup in `.venv`
 - Ollama readiness and required model validation
 - Startup, runtime checks, monitoring, and graceful shutdown
+- Offline PDF-to-audiobook generation for text-based PDFs
 - Safe rollback boundaries for failed installation attempts
 
 ## Prerequisites
@@ -126,6 +127,69 @@ export LULU_RESTART_BACKOFF_SECONDS="2"
 ./scripts/start_lulu.sh
 ```
 
+## Offline PDF Audiobooks
+
+### Scope
+
+This repo also includes a separate offline utility for turning text-based PDFs into cleaned text plus local AIFF section files. It does not run through `main.py` and does not affect wake, router, or interactive voice behavior.
+
+### Run the workflow
+
+From the repo root:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf --dry-run
+```
+
+Generate audio files locally:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --title "My Local Book" \
+  --author "Example Author" \
+  --output-dir ./outputs/audiobooks
+```
+
+Generate portable copies with a second local conversion pass:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --title "My Local Book" \
+  --author "Example Author" \
+  --output-dir ./outputs/audiobooks \
+  --portable-format wav
+```
+
+### Supported inputs
+
+- local `.pdf` files only
+- text-based PDFs first
+- macOS-local export through native `say`
+
+### Current limitations
+
+- encrypted PDFs are rejected
+- corrupted or unsupported PDFs are rejected with operator-facing errors
+- scanned or image-only PDFs stop early and report that OCR is currently deferred
+- output is section-level AIFF files by default, with optional `wav`, `m4a`, or `mp3` copies when `--portable-format` is requested
+- packaged M4B audiobooks are still out of scope
+
+### Pronunciation overrides
+
+Simple replacement-based overrides can be provided with a JSON file:
+
+```json
+{
+  "MLX": "M L X",
+  "ChromaDB": "Chroma D B"
+}
+```
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --pronunciation-file ./pronunciations.json
+```
+
 ### Ollama management
 
 By default, the wrapper auto-starts Ollama if it is offline:
@@ -184,6 +248,22 @@ Run:
 ```bash
 ./scripts/install_lulu.sh
 ```
+
+### PDF workflow reports an encrypted file
+
+Provide a decrypted local copy first. The repo-default workflow does not try to unlock PDFs.
+
+### PDF workflow reports no extractable text
+
+The file is likely scanned or image-only. OCR is not bundled into the current repo workflow.
+
+### PDF workflow reports an existing output directory
+
+Choose a different `--output-dir` or change `--title` so the book slug is unique.
+
+### PDF workflow reports missing `ffmpeg`
+
+The optional `--portable-format` conversion step depends on `ffmpeg`. Install it or rerun without portable conversion.
 
 ### Startup wrapper says a required Ollama model is missing
 

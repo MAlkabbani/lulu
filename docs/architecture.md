@@ -34,17 +34,21 @@ Microphone
 - `main.py`: app bootstrap, mode selection, turn loop orchestration, and degraded-mode handling
 - `config.py`: environment-backed runtime settings and wake guidance text
 - `audio_handler.py`: microphone capture, transcription, TTS chunking, and playback coordination
+- `pdf_audiobook.py`: offline PDF validation, text cleanup, sectioning, and local audiobook export
 - `wake_detection.py`: acoustic wake matching, scoring, and fast-path eligibility
 - `llm_router.py`: memory recall, tool registration, validation, and bounded tool orchestration
 - `memory_manager.py`: ChromaDB persistence, deduplication, and retrieval
 - `ollama_client.py`: local Ollama transport wrapper for health checks, embeddings, and chat
 - `terminal_ui.py`: rich-based dashboard for latency, wake, memory, and response visibility
+- `scripts/pdf_to_audiobook.py`: repo-local CLI wrapper for the offline audiobook workflow
 
 ## External Dependencies
 
 - `mlx-whisper`: speech-to-text on Apple Silicon
 - `ollama`: local chat model and embeddings
 - `chromadb`: persistent semantic memory store
+- `pypdf`: text-based PDF parsing for offline audiobook preparation
+- `ffmpeg`: optional local post-processing for portable audiobook copies
 - `sounddevice`: microphone input
 - `rich`: terminal observability layer
 - macOS `say`: built-in text-to-speech
@@ -53,6 +57,7 @@ Microphone
 
 - keep settings explicit and environment-driven
 - validate tool arguments before backend execution
+- validate file paths and reject unsupported PDF states at the boundary
 - preserve local-only operation and avoid cloud fallbacks
 - prefer focused regression tests over broad fragile suites
 - document behavior changes in `README.md` or `docs/` when runtime behavior changes
@@ -63,3 +68,4 @@ Microphone
 - assistant playback is non-interruptible today
 - the published tool surface is memory-only by design
 - wake behavior combines acoustic and transcript evidence, not transcript matching alone
+- PDF audiobook generation supports text-based PDFs first; OCR is explicitly deferred
