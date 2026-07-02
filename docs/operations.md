@@ -220,7 +220,7 @@ The reliable continuous-listening flow is:
 
 ### Speech output sounds choppy
 
-The runtime now avoids emitting very short punctuation-led chunks too early, but phrase-boundary streaming can still sound less smooth than sentence-sized playback. If this remains noticeable in your environment, use turn-based mode to isolate whether the issue is specific to continuous voice flow:
+The runtime now uses grouped smoothness-first playback with delayed first speech, clause-aware chunk breaks, and short-tail merging. If seams are still noticeable in your environment, use turn-based mode to isolate whether the issue is specific to continuous voice flow:
 
 ```bash
 ./scripts/start_lulu.sh --mode turn-based

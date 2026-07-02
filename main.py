@@ -522,6 +522,8 @@ def _stream_and_chunk(
     pending_chunks: list[str] = []
 
     for piece in stream_source:
+        if playback_started and len(pending_chunks) <= 1 and ui.state.emitted_chunk_count > 0:
+            ui.record_playback_gap()
         response_parts.append(piece)
         ui.set_response("".join(response_parts).strip())
         for chunk in chunker.push(piece):
@@ -545,7 +547,8 @@ def _stream_and_chunk(
         yield piece
 
     pending_chunks.extend(chunker.finish())
-    _merge_short_final_pending_tail(settings=settings, pending_chunks=pending_chunks)
+    if _merge_short_final_pending_tail(settings=settings, pending_chunks=pending_chunks):
+        ui.record_tail_merge()
     _emit_pending_chunks(tts=tts, ui=ui, pending_chunks=pending_chunks)
 
 
@@ -582,13 +585,13 @@ def _emit_ready_chunks_with_lookahead(
 def _merge_short_final_pending_tail(
     settings: Settings,
     pending_chunks: list[str],
-) -> None:
+) -> bool:
     if len(pending_chunks) < 2:
-        return
+        return False
 
     tail_chunk = pending_chunks[-1].strip()
     if len(tail_chunk) > settings.tts_stream_tail_merge_chars:
-        return
+        return False
 
     merged_candidate = f"{pending_chunks[-2].rstrip()} {tail_chunk}".strip()
     max_merged_length = (
@@ -596,9 +599,10 @@ def _merge_short_final_pending_tail(
         + settings.tts_stream_tail_merge_overflow_chars
     )
     if len(merged_candidate) > max_merged_length:
-        return
+        return False
 
     pending_chunks[-2:] = [merged_candidate]
+    return True
 
 
 def _emit_chunk(

@@ -4,6 +4,7 @@ from collections import Counter
 from collections import deque
 from dataclasses import dataclass, field
 import threading
+from time import perf_counter
 
 from rich.columns import Columns
 from rich.console import Console
@@ -25,8 +26,12 @@ class UIState:
     memory_hit_count: int = 0
     emitted_chunk_count: int = 0
     spoken_chunk_count: int = 0
+    emitted_char_count: int = 0
+    spoken_char_count: int = 0
     last_emitted_chunk: str = ""
     last_spoken_chunk: str = ""
+    playback_gap_count: int = 0
+    tail_merge_count: int = 0
     recent_saves: deque[str] = field(default_factory=lambda: deque(maxlen=5))
     recent_events: deque[str] = field(default_factory=lambda: deque(maxlen=10))
     recent_wake_attempts: deque[str] = field(default_factory=lambda: deque(maxlen=6))
@@ -50,6 +55,7 @@ class TerminalUI:
         self.console = Console()
         self.state = UIState()
         self._state_lock = threading.RLock()
+        self._turn_started_at = perf_counter()
         self.live = Live(
             self._render(),
             console=self.console,
@@ -141,6 +147,7 @@ class TerminalUI:
     def record_emitted_chunk(self, chunk: str) -> None:
         with self._state_lock:
             self.state.emitted_chunk_count += 1
+            self.state.emitted_char_count += len(chunk)
             self.state.last_emitted_chunk = chunk
             self.log_event(
                 f"Emitted speech chunk {self.state.emitted_chunk_count}: {self._truncate(chunk)}",
@@ -150,12 +157,29 @@ class TerminalUI:
 
     def record_spoken_chunk(self, chunk: str) -> None:
         with self._state_lock:
+            if self.state.spoken_chunk_count == 0:
+                self.state.latencies_ms["first_spoken"] = (
+                    perf_counter() - self._turn_started_at
+                ) * 1000
             self.state.spoken_chunk_count += 1
+            self.state.spoken_char_count += len(chunk)
             self.state.last_spoken_chunk = chunk
             self.log_event(
                 f"Spoke chunk {self.state.spoken_chunk_count}: {self._truncate(chunk)}",
                 refresh=False,
             )
+            self._refresh_locked()
+
+    def record_playback_gap(self) -> None:
+        with self._state_lock:
+            self.state.playback_gap_count += 1
+            self.log_event("Playback buffer ran low; waiting on the next streamed chunk.", refresh=False)
+            self._refresh_locked()
+
+    def record_tail_merge(self) -> None:
+        with self._state_lock:
+            self.state.tail_merge_count += 1
+            self.log_event("Merged a short trailing speech tail into the previous chunk.", refresh=False)
             self._refresh_locked()
 
     def set_conversation_window_remaining(self, seconds: float | None) -> None:
@@ -199,11 +223,16 @@ class TerminalUI:
 
     def reset_turn(self) -> None:
         with self._state_lock:
+            self._turn_started_at = perf_counter()
             self.state.memory_hit_count = 0
             self.state.emitted_chunk_count = 0
             self.state.spoken_chunk_count = 0
+            self.state.emitted_char_count = 0
+            self.state.spoken_char_count = 0
             self.state.last_emitted_chunk = ""
             self.state.last_spoken_chunk = ""
+            self.state.playback_gap_count = 0
+            self.state.tail_merge_count = 0
             self.state.latencies_ms = {}
             self.state.transcript = ""
             self.state.response = ""
@@ -282,6 +311,11 @@ class TerminalUI:
     def _render_status(self) -> Table:
         table = Table.grid(padding=(0, 1))
         queue_backlog = max(0, self.state.emitted_chunk_count - self.state.spoken_chunk_count)
+        average_emitted_chunk_chars = 0
+        if self.state.emitted_chunk_count:
+            average_emitted_chunk_chars = round(
+                self.state.emitted_char_count / self.state.emitted_chunk_count
+            )
         table.add_row("Assistant", Text(self.settings.app_name, style="bold white"))
         table.add_row("Mode", self._mode_badge())
         table.add_row("Runtime", self._runtime_badge())
@@ -296,6 +330,22 @@ class TerminalUI:
             Text(
                 f"{self.state.spoken_chunk_count}/{self.state.emitted_chunk_count} (queue {queue_backlog})",
                 style="bold green" if queue_backlog == 0 else "bold yellow",
+            ),
+        )
+        table.add_row(
+            "Avg chunk",
+            Text(
+                f"{average_emitted_chunk_chars} chars" if average_emitted_chunk_chars else "n/a",
+                style="bright_magenta",
+            ),
+        )
+        table.add_row(
+            "Continuity",
+            Text(
+                f"tail merges {self.state.tail_merge_count}, buffer gaps {self.state.playback_gap_count}",
+                style="bright_yellow"
+                if self.state.playback_gap_count
+                else "green",
             ),
         )
         table.add_row(
@@ -377,7 +427,16 @@ class TerminalUI:
             table.add_row("No timing data yet.")
             return table
 
-        for label in ("capture", "stt", "router", "first_token", "tts", "stream_total", "total"):
+        for label in (
+            "capture",
+            "stt",
+            "router",
+            "first_token",
+            "first_spoken",
+            "tts",
+            "stream_total",
+            "total",
+        ):
             if label in self.state.latencies_ms:
                 table.add_row(label, self._latency_text(self.state.latencies_ms[label]))
         return table

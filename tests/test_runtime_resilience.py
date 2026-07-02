@@ -146,3 +146,13 @@ def test_process_transcript_turn_keeps_final_text_when_tts_fails() -> None:
     assert ui.state.mode == "tts_error"
     assert ui.state.response == "Hello there."
     assert "macOS say failed" in ui.state.status_line
+
+
+def test_terminal_ui_records_first_spoken_latency_on_first_chunk() -> None:
+    ui = TerminalUI(Settings())
+
+    ui.reset_turn()
+    ui.record_spoken_chunk("hello there")
+
+    assert "first_spoken" in ui.state.latencies_ms
+    assert ui.state.spoken_chunk_count == 1

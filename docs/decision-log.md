@@ -367,7 +367,7 @@ Begin playback through smoother grouped chunks while retaining macOS `say` for t
 
 ### Rationale
 
-This keeps the native zero-setup TTS path while reducing chopped playback by buffering the first spoken chunk, grouping short neighboring sentences, and merging tiny final tails backward when safe.
+This keeps the native zero-setup TTS path while reducing chopped playback by buffering the first spoken chunk, grouping short neighboring sentences, preferring clause-aware breaks before hard splits, and merging tiny final tails backward when safe.
 
 ### Tradeoffs
 
@@ -387,6 +387,7 @@ This keeps the native zero-setup TTS path while reducing chopped playback by buf
 | --- | --- |
 | 2026-07-01 | Initial entry recorded |
 | 2026-07-02 | Revised to smoothness-first grouped playback with tail-merge protection |
+| 2026-07-02 | Added clause-aware fallback chunking and continuity metrics for live tuning |
 
 ### Evidence
 
