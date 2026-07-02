@@ -54,6 +54,12 @@ class Settings:
         os.getenv("TTS_STREAM_SOFT_CHUNK_CHARS", "150")
     )
     tts_stream_max_chunk_chars: int = int(os.getenv("TTS_STREAM_MAX_CHUNK_CHARS", "240"))
+    practical_voice_mode: bool = os.getenv("PRACTICAL_VOICE_MODE", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     wake_phrase: str = os.getenv("WAKE_PHRASE", "hey lulu")
     wake_scan_max_record_seconds: float = float(
         os.getenv("WAKE_SCAN_MAX_RECORD_SECONDS", "3.0")
@@ -79,6 +85,41 @@ class Settings:
     continuous_listening_enabled: bool = os.getenv(
         "CONTINUOUS_LISTENING_ENABLED", "true"
     ).lower() in {"1", "true", "yes", "on"}
+
+    def __post_init__(self) -> None:
+        if not self.practical_voice_mode:
+            return
+
+        object.__setattr__(
+            self,
+            "wake_scan_max_record_seconds",
+            max(self.wake_scan_max_record_seconds, 3.5),
+        )
+        object.__setattr__(
+            self,
+            "wake_scan_min_speech_seconds",
+            min(self.wake_scan_min_speech_seconds, 0.22),
+        )
+        object.__setattr__(
+            self,
+            "wake_scan_silence_seconds",
+            max(self.wake_scan_silence_seconds, 0.55),
+        )
+        object.__setattr__(
+            self,
+            "wake_scan_pre_roll_chunks",
+            max(self.wake_scan_pre_roll_chunks, 8),
+        )
+        object.__setattr__(
+            self,
+            "conversation_window_seconds",
+            max(self.conversation_window_seconds, 14.0),
+        )
+        object.__setattr__(
+            self,
+            "wake_match_score_threshold",
+            min(self.wake_match_score_threshold, 0.84),
+        )
 
 
 DEFAULT_SYSTEM_PROMPT = """You are Lulu, a fully local Apple Silicon voice assistant.

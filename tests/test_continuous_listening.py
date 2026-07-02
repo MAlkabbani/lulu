@@ -20,6 +20,8 @@ from main import (
     _remaining_window,
     _should_suppress_self_audio_echo,
     _transcribe_audio,
+    _wake_rejection_guidance,
+    _wake_rejection_response,
     _window_active,
     parse_args,
 )
@@ -191,6 +193,8 @@ def test_terminal_ui_records_recent_wake_attempts() -> None:
     assert ui.state.recent_wake_attempts[0].startswith("ACCEPTED score=0.91")
     assert ui.state.accepted_wake_attempts == 1
     assert ui.state.wake_score_buckets["0.86-0.94"] == 1
+    assert ui._wake_success_rate_text().plain == "100%"
+    assert ui._wake_average_score_text().plain == "0.91"
 
 
 def test_self_audio_guard_suppresses_recent_similar_reply() -> None:
@@ -268,6 +272,29 @@ def test_terminal_ui_records_rejected_wake_attempt_counters() -> None:
 
     assert ui.state.rejected_wake_attempts == 1
     assert ui.state.wake_score_buckets["<0.50"] == 1
+    assert ui.state.wake_rejection_reasons["below-threshold"] == 1
+    assert "below-threshold:1" in ui._wake_rejection_reason_text().plain
+
+
+def test_settings_practical_voice_mode_relaxes_wake_defaults() -> None:
+    settings = Settings(practical_voice_mode=True)
+
+    assert settings.wake_scan_max_record_seconds >= 3.5
+    assert settings.wake_scan_silence_seconds >= 0.55
+    assert settings.wake_scan_pre_roll_chunks >= 8
+    assert settings.conversation_window_seconds >= 14.0
+    assert settings.wake_match_score_threshold <= 0.84
+
+
+def test_wake_rejection_helpers_offer_practical_guidance() -> None:
+    settings = build_settings()
+
+    too_short = _wake_rejection_response("too-short", 0.0, settings)
+    below_threshold = _wake_rejection_guidance("below-threshold", settings)
+
+    assert "short fragment" in too_short
+    assert settings.wake_phrase in too_short
+    assert settings.wake_phrase in below_threshold
 
 
 def test_bootstrap_connection_reports_startup_failure_when_ollama_is_down() -> None:

@@ -371,7 +371,7 @@ source .venv/bin/activate
 python main.py
 ```
 
-Lulu now runs in always-on passive listening mode by default. It waits for the fixed wake phrase `hey lulu`, uses a conservative scored matcher to tolerate common Whisper-style confusions such as `hay lou lou`, opens a 12-second follow-up conversation window, then returns to passive listening automatically after the window expires.
+Lulu now runs in always-on passive listening mode by default. It waits for the fixed wake phrase `hey lulu`, uses a scored matcher to tolerate common Whisper-style confusions such as `hay lou lou`, opens a follow-up conversation window, then returns to passive listening automatically after the window expires. The wake debug panel now also shows session success rate, average wake score, top rejection reasons, and live guidance when Whisper captured something that still was not a usable wake phrase.
 
 Recommended voice flow:
 
@@ -385,7 +385,7 @@ The terminal now shows a small live dashboard with:
 
 - current assistant mode such as `passive_listening`, `conversation_window`, `thinking`, and `speaking`
 - a visible runtime badge showing `CONTINUOUS`, `TURN-BASED`, or `TEXT`
-- a wake debug panel with the current score threshold, accepted/rejected counters, score bins, and recent accepted/rejected wake attempts
+- a wake debug panel with the current score threshold, accepted/rejected counters, session success rate, average wake score, top rejection reasons, score bins, guidance, and recent accepted/rejected wake attempts
 - latest transcript and spoken response
 - recent memory saves
 - a recent-turn event log for capture, transcription, recall, save, and response milestones
@@ -465,6 +465,7 @@ export TTS_STREAM_TAIL_MERGE_CHARS="40"
 export TTS_STREAM_TAIL_MERGE_OVERFLOW_CHARS="48"
 export TTS_STREAM_SOFT_CHUNK_CHARS="150"
 export TTS_STREAM_MAX_CHUNK_CHARS="240"
+export PRACTICAL_VOICE_MODE="false"
 export WAKE_PHRASE="hey lulu"
 export WAKE_SCAN_MAX_RECORD_SECONDS="3.0"
 export WAKE_SCAN_MIN_SPEECH_SECONDS="0.25"
@@ -486,6 +487,8 @@ export LULU_RESTART_ON_FAILURE="true"
 export LULU_MAX_RESTARTS="2"
 export LULU_RESTART_BACKOFF_SECONDS="2"
 ```
+
+Set `PRACTICAL_VOICE_MODE="true"` if you want Lulu to use a slightly more forgiving wake profile for everyday voice use. That preset lengthens the wake scan window, keeps a little more pre-roll, slightly relaxes the score threshold, and gives you a longer follow-up window after a successful wake.
 
 ## Important Implementation Notes
 
