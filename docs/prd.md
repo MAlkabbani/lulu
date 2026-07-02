@@ -74,7 +74,7 @@ A developer or maintainer who needs to observe, tune, and extend the assistant's
 - Local chat and embedding generation through Ollama
 - Persistent semantic memory in ChromaDB
 - Explicit memory storage via `insert info ...`
-- Autonomous memory storage via a validated backend tool registry that currently exposes one supported tool call
+- Autonomous memory storage and read-only lookup via a validated backend tool registry
 - Phrase-boundary streamed speech output using macOS `say`
 - Continuous listening with fixed wake phrase `hey lulu`
 - Short active conversation window after wake
@@ -97,12 +97,12 @@ A developer or maintainer who needs to observe, tune, and extend the assistant's
 Lulu uses a hybrid router with two main behavior paths:
 
 - An explicit command path for deterministic memory writes
-- A conversational path that recalls memory, lets the model optionally request a memory-save tool, and then produces a final spoken reply
+- A conversational path that recalls memory, lets the model optionally request bounded memory tools, and then produces a final spoken reply
 
 For user-facing operation, the current baseline distinguishes three invocation outcomes:
 
 - deterministic explicit-save commands such as `insert info ...`
-- natural-language turns that may trigger the validated `save_to_memory` tool
+- natural-language turns that may trigger validated memory tools such as `save_to_memory` or `search_memory`
 - normal chat turns that produce a reply without any backend action
 
 The product supports three runtime modes:
@@ -126,6 +126,8 @@ The current shipped baseline uses these defaults unless overridden by environmen
 - wake phrase: `hey lulu`
 - practical voice preset: available, but disabled by default
 - memory recall depth: top `3` memories
+- tool round limit: `2`
+- tool calls per round limit: `2`
 - conversation window: `12.0` seconds
 - wake cooldown: `1.2` seconds
 - self-audio guard window: `8.0` seconds
@@ -184,15 +186,26 @@ sequenceDiagram
     Memory->>Vault: Semantic recall
     Vault-->>Memory: Relevant memories
     Memory-->>Router: Memory hits with tags
-    Router->>Chat: Chat request with context and save_to_memory tool
-    alt Model calls save_to_memory
-        Chat-->>Router: tool_calls.save_to_memory(fact)
-        Router->>Memory: upsert_memory(fact)
-        Memory->>Embed: Create embedding
-        Embed-->>Memory: Vector
-        Memory->>Vault: Insert or update canonical record
-        Vault-->>Memory: Persisted
-        Router->>Chat: Tool result message
+    Router->>Chat: Chat request with context and validated memory tools
+    alt Model calls one or more tools
+        alt search_memory
+            Chat-->>Router: tool_calls.search_memory(query, limit)
+            Router->>Memory: query_memory(query)
+            Memory->>Embed: Embed query
+            Embed-->>Memory: Query vector
+            Memory->>Vault: Semantic recall
+            Vault-->>Memory: Relevant memories
+            Memory-->>Router: Structured memory hits
+        end
+        alt save_to_memory
+            Chat-->>Router: tool_calls.save_to_memory(fact)
+            Router->>Memory: upsert_memory(fact)
+            Memory->>Embed: Create embedding
+            Embed-->>Memory: Vector
+            Memory->>Vault: Insert or update canonical record
+            Vault-->>Memory: Persisted
+        end
+        Router->>Chat: Tool result messages
         Chat-->>Router: Final assistant reply
     else No tool call
         Chat-->>Router: Final assistant reply
@@ -296,7 +309,7 @@ For non-explicit turns, the product shall query persistent memory and provide th
 
 ### FR-7 Autonomous Memory Tool Calling
 
-The conversational model shall have access to exactly one supported memory tool, `save_to_memory`, and the backend shall execute at most one tool round per user turn.
+The conversational model shall have access only to allowlisted memory tools exposed through the backend registry. The current baseline supports `save_to_memory` and `search_memory`, and the backend shall enforce bounded tool rounds and bounded tool calls per round.
 
 ### FR-8 Canonical Long-Term Memory
 
@@ -365,7 +378,7 @@ The product shall fail safely when:
 - no speech is detected
 - a wake attempt falls below threshold
 
-The product shall avoid recursive tool loops by design.
+The product shall avoid recursive tool loops by design through explicit backend round limits, per-round tool-call limits, and a final reply path that does not re-open tool execution.
 
 ### NFR-4 Maintainability
 
@@ -410,7 +423,8 @@ As an end user, I want Lulu to remember durable facts I mention naturally so tha
 Acceptance criteria:
 
 - Given a non-explicit conversational turn, when the model identifies a durable fact, then it may call `save_to_memory`.
-- Given a tool call request, when the payload passes the registered schema and backend validation, then the backend stores the memory and allows one follow-up generation round.
+- Given a non-explicit conversational turn, when the user asks what Lulu remembers, then the model may call `search_memory`.
+- Given a tool call request, when the payload passes the registered schema and backend validation, then the backend executes the allowlisted memory tool and hands the result into the final generation path.
 - Given a malformed or unsupported tool request, when the backend rejects it, then Lulu returns a structured error payload instead of executing an unsafe action.
 - Given a turn with no durable fact, when the model responds, then no memory save is executed.
 

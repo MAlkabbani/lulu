@@ -157,6 +157,10 @@ class TerminalUI:
                 self.state.current_tool_status = f"{tool_name} failed"
                 self.state.last_tool_result = detail
                 event = f"Tool failed: {detail}"
+            elif stage == "limit_reached":
+                self.state.current_tool_status = "tool limit reached"
+                self.state.last_tool_result = detail
+                event = f"Tool limit reached: {detail}"
             else:
                 self.state.current_tool_status = f"{tool_name} {stage}"
                 event = f"Tool update: {tool_name} {stage}"

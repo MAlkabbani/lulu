@@ -491,6 +491,8 @@ def _process_transcript_turn(
         final_tool_stage = prepared.tool_traces[-1].stage
         if final_tool_stage == "failed":
             ui.set_mode("thinking", "Backend action was rejected safely. Generating a reply...")
+        elif final_tool_stage == "limit_reached":
+            ui.set_mode("thinking", "Backend action hit the configured tool limit. Generating a reply...")
         else:
             ui.set_mode("thinking", "Backend action completed. Generating a reply...")
     else:
