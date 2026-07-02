@@ -55,33 +55,7 @@ def format_hit(hit: MemoryHit, index: int, show_metadata: bool) -> str:
 
 
 def list_memories(manager: MemoryManager, limit: int) -> list[MemoryHit]:
-    raw = manager.collection.get(
-        limit=limit,
-        include=["documents", "metadatas"],
-    )
-    ids = raw.get("ids", [])
-    documents = raw.get("documents", [])
-    metadatas = raw.get("metadatas", [])
-    hits: list[MemoryHit] = []
-
-    for memory_id, document, metadata in zip(ids, documents, metadatas):
-        metadata = metadata or {}
-        hits.append(
-            MemoryHit(
-                id=memory_id,
-                text=document,
-                distance=None,
-                similarity=None,
-                tags=MemoryManager._parse_tags(metadata),
-                metadata=metadata,
-            )
-        )
-
-    hits.sort(
-        key=lambda hit: str(hit.metadata.get("updated_at", "")),
-        reverse=True,
-    )
-    return hits
+    return manager.list_recent_memories(limit)
 
 
 def main() -> None:

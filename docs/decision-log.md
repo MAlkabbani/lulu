@@ -200,7 +200,7 @@ Use a hybrid router with two paths:
 
 ### Rationale
 
-This preserves user control, reduces compute on deterministic save requests, and still allows agentic memory capture when users speak naturally. The registry-backed tool path keeps the safety boundary in Python by separating tool metadata, schema validation, and execution while allowing a bounded memory-focused tool surface instead of a single hardcoded save path. The terminal UI now also surfaces whether a turn stayed chat-only, used the explicit save command, or ran the validated backend tool path so users can understand what Lulu actually did.
+This preserves user control, reduces compute on deterministic save requests, and still allows agentic memory capture when users speak naturally. The registry-backed tool path keeps the safety boundary in Python by separating tool metadata, schema validation, and execution while allowing a bounded memory-focused tool surface instead of a single hardcoded save path. The tool surface now also includes read-only recency lookup and auditable explanation of returned memory ids, while the terminal UI surfaces whether a turn stayed chat-only, used the explicit save command, or ran the validated backend tool path so users can understand what Lulu actually did.
 
 ### Tradeoffs
 
@@ -220,6 +220,7 @@ This preserves user control, reduces compute on deterministic save requests, and
 | 2026-07-02 | Replaced the hardcoded tool execution path with a validated registry-backed contract while keeping the single-tool operating model |
 | 2026-07-02 | Added user-visible invocation-path and tool-status surfaces to reduce ambiguity between chat, explicit saves, and validated tool use |
 | 2026-07-02 | Expanded the validated memory tool surface to bounded multi-tool rounds with read-only conversational lookup |
+| 2026-07-02 | Added recent-memory and explain-by-id tools for safer conversational memory inspection |
 
 ### Evidence
 
@@ -236,7 +237,7 @@ This preserves user control, reduces compute on deterministic save requests, and
 - Title: Prefer Canonical Memory Records Over Raw Append-Only Memory
 - Status: Accepted and shipped
 - Date: 2026-07-01
-- Last Updated: 2026-07-01
+- Last Updated: 2026-07-02
 
 ### Context
 
@@ -255,11 +256,11 @@ Raw append-only memory would accumulate duplicates and reduce recall quality ove
 
 ### Decision
 
-Use canonical memory records, semantic deduplication, backend-assigned free-form tags, and latest-wins updates for conflicting facts in the same semantic slot.
+Use canonical memory records, semantic deduplication, backend-assigned free-form tags, and latest-wins updates for conflicting facts in the same semantic slot. Track auditable metadata such as primary category, source label, revision count, and update timestamps on each canonical record.
 
 ### Rationale
 
-This improves long-term memory quality without prematurely imposing a rigid schema or expensive manual review workflow.
+This improves long-term memory quality without prematurely imposing a rigid schema or expensive manual review workflow, while still giving the assistant and operator enough provenance to inspect why a memory exists and how many times it has changed.
 
 ### Tradeoffs
 
@@ -276,6 +277,7 @@ This improves long-term memory quality without prematurely imposing a rigid sche
 | Date | Change |
 | --- | --- |
 | 2026-07-01 | Initial entry recorded |
+| 2026-07-02 | Added auditable category, source-label, revision-count, and update-time metadata to canonical records |
 
 ### Evidence
 
