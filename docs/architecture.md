@@ -34,7 +34,7 @@ Microphone
 - `main.py`: app bootstrap, mode selection, turn loop orchestration, and degraded-mode handling
 - `config.py`: environment-backed runtime settings and wake guidance text
 - `audio_handler.py`: microphone capture, transcription, TTS chunking, and playback coordination
-- `pdf_audiobook.py`: offline PDF validation, text cleanup, sectioning, and local audiobook export
+- `pdf_audiobook.py`: offline PDF validation, text cleanup, sectioning, local audiobook export, and export playback helpers
 - `wake_detection.py`: acoustic wake matching, scoring, and fast-path eligibility
 - `llm_router.py`: memory recall, tool registration, validation, and bounded tool orchestration
 - `memory_manager.py`: ChromaDB persistence, deduplication, and retrieval

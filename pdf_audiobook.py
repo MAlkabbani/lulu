@@ -63,6 +63,21 @@ class PDFProcessingError(PDFToAudiobookError):
 class AudiobookRenderError(PDFToAudiobookError):
     """Raised when local TTS export fails."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        audio_paths: list[Path] | None = None,
+        portable_audio_paths: list[Path] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.audio_paths = audio_paths or []
+        self.portable_audio_paths = portable_audio_paths or []
+
+
+class PlaybackError(PDFToAudiobookError):
+    """Raised when generated audiobook assets cannot be played locally."""
+
 
 @dataclass(frozen=True)
 class BookMetadata:
@@ -106,7 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Convert a local text-based PDF into cleaned text and local macOS audiobook files."
         )
     )
-    parser.add_argument("input_pdf", help="Path to a local PDF file.")
+    parser.add_argument("input_pdf", nargs="?", help="Path to a local PDF file.")
     parser.add_argument(
         "--title",
         help="Book title override. Defaults to PDF metadata title or the file stem.",
@@ -154,6 +169,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--pronunciation-file",
         help="Optional JSON file containing simple pronunciation override replacements.",
     )
+    parser.add_argument(
+        "--play-export",
+        help=(
+            "Play a previously generated export directory. "
+            "When set, Lulu plays generated audio if available or exported text "
+            "according to --play-mode."
+        ),
+    )
+    parser.add_argument(
+        "--play-after-export",
+        action="store_true",
+        help=(
+            "After preparing an export, immediately play generated audio or exported "
+            "text according to --play-mode."
+        ),
+    )
+    parser.add_argument(
+        "--play-mode",
+        choices=("auto", "audio", "text"),
+        default="auto",
+        help=(
+            "Playback preference for --play-export or --play-after-export. "
+            "Default: auto."
+        ),
+    )
     return parser
 
 
@@ -161,6 +201,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        validate_cli_args(args)
+        if args.play_export:
+            export_dir = validate_export_directory(Path(args.play_export))
+            played_paths, playback_mode = play_export_directory(
+                export_dir,
+                play_mode=args.play_mode,
+                progress=_print_progress,
+            )
+            print(
+                "[lulu-pdf] Playback complete:"
+                f" played {len(played_paths)} {playback_mode} file(s) from {export_dir}"
+            )
+            return 0
         artifacts = build_audiobook_from_args(args, progress=_print_progress)
     except PDFToAudiobookError as exc:
         print(f"[lulu-pdf] ERROR: {exc}")
@@ -172,10 +225,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"[lulu-pdf] Manifest: {artifacts.manifest_path}")
     if args.dry_run:
+        print("[lulu-pdf] Media files: 0 (--dry-run writes text artifacts only)")
         preview = artifacts.full_text_path.read_text(encoding="utf-8")[: max(0, args.preview_chars)]
         if preview:
             print("[lulu-pdf] Preview:")
             print(preview)
+        if args.play_after_export:
+            played_paths, playback_mode = play_export_directory(
+                artifacts.output_dir,
+                play_mode=args.play_mode,
+                progress=_print_progress,
+            )
+            print(
+                "[lulu-pdf] Playback complete:"
+                f" played {len(played_paths)} {playback_mode} file(s) from {artifacts.output_dir}"
+            )
+        else:
+            print(
+                "[lulu-pdf] To read the exported text aloud later:"
+                f" python3 scripts/pdf_to_audiobook.py --play-export {artifacts.output_dir}"
+                " --play-mode text"
+            )
     else:
         print(f"[lulu-pdf] Audio files: {len(artifacts.audio_paths)}")
         if artifacts.portable_audio_paths:
@@ -183,7 +253,38 @@ def main(argv: list[str] | None = None) -> int:
                 "[lulu-pdf] Portable files:"
                 f" {len(artifacts.portable_audio_paths)} ({args.portable_format})"
             )
+        print(
+            "[lulu-pdf] To listen now:"
+            f" python3 scripts/pdf_to_audiobook.py --play-export {artifacts.output_dir}"
+        )
+        if args.play_after_export:
+            played_paths, playback_mode = play_export_directory(
+                artifacts.output_dir,
+                play_mode=args.play_mode,
+                progress=_print_progress,
+            )
+            print(
+                "[lulu-pdf] Playback complete:"
+                f" played {len(played_paths)} {playback_mode} file(s) from {artifacts.output_dir}"
+            )
     return 0
+
+
+def validate_cli_args(args: argparse.Namespace) -> None:
+    if args.play_export:
+        if args.input_pdf:
+            raise InputValidationError(
+                "Do not provide INPUT.pdf when using --play-export."
+            )
+        if args.play_after_export:
+            raise InputValidationError(
+                "--play-after-export cannot be used together with --play-export."
+            )
+        return
+    if not args.input_pdf:
+        raise InputValidationError(
+            "Provide INPUT.pdf to generate an export, or use --play-export to play an existing export."
+        )
 
 
 def build_audiobook_from_args(
@@ -237,6 +338,7 @@ def build_audiobook_from_args(
         extraction=extraction,
         sections=sections,
         chapter_splitting=args.chapter_splitting,
+        portable_format=args.portable_format,
     )
 
     if args.dry_run:
@@ -244,21 +346,61 @@ def build_audiobook_from_args(
         return artifacts
 
     progress("Rendering section audio locally with macOS say")
-    audio_paths = render_section_audio(artifacts.section_text_paths, progress=progress)
+    try:
+        audio_paths = render_section_audio(artifacts.section_text_paths, progress=progress)
+    except AudiobookRenderError as exc:
+        update_manifest_audio_outputs(
+            manifest_path=artifacts.manifest_path,
+            output_dir=artifacts.output_dir,
+            audio_paths=exc.audio_paths,
+            portable_audio_paths=[],
+            portable_format=args.portable_format,
+            audio_render_status="failed",
+            audio_render_error=str(exc),
+            portable_conversion_status=(
+                "blocked" if args.portable_format != "none" else "not_requested"
+            ),
+            portable_conversion_error=(
+                "Audio rendering did not finish, so portable conversion did not run."
+                if args.portable_format != "none"
+                else None
+            ),
+        )
+        raise
     portable_audio_paths: list[Path] = []
     if args.portable_format != "none":
         progress(f"Converting AIFF outputs to {args.portable_format}")
-        portable_audio_paths = convert_audio_outputs(
-            audio_paths,
-            portable_format=args.portable_format,
-            progress=progress,
-        )
+        try:
+            portable_audio_paths = convert_audio_outputs(
+                audio_paths,
+                portable_format=args.portable_format,
+                progress=progress,
+            )
+        except AudiobookRenderError as exc:
+            update_manifest_audio_outputs(
+                manifest_path=artifacts.manifest_path,
+                output_dir=artifacts.output_dir,
+                audio_paths=audio_paths,
+                portable_audio_paths=exc.portable_audio_paths,
+                portable_format=args.portable_format,
+                audio_render_status="succeeded",
+                audio_render_error=None,
+                portable_conversion_status="failed",
+                portable_conversion_error=str(exc),
+            )
+            raise
     update_manifest_audio_outputs(
         manifest_path=artifacts.manifest_path,
         output_dir=artifacts.output_dir,
         audio_paths=audio_paths,
         portable_audio_paths=portable_audio_paths,
         portable_format=args.portable_format,
+        audio_render_status="succeeded",
+        audio_render_error=None,
+        portable_conversion_status=(
+            "succeeded" if args.portable_format != "none" else "not_requested"
+        ),
+        portable_conversion_error=None,
     )
     return WorkflowArtifacts(
         output_dir=artifacts.output_dir,
@@ -657,12 +799,12 @@ def apply_pronunciation_overrides(text: str, overrides: list[tuple[str, str]]) -
 
 def prepare_output_directory(output_root: Path, title: str) -> Path:
     root = output_root.expanduser().resolve()
-    target = root / slugify(title)
-    if target.exists():
-        raise InputValidationError(
-            f"Output directory already exists: {target}. "
-            "Choose a different title or output directory."
-        )
+    base_name = slugify(title)
+    target = root / base_name
+    suffix = 2
+    while target.exists():
+        target = root / f"{base_name}-{suffix}"
+        suffix += 1
     target.mkdir(parents=True, exist_ok=False)
     return target
 
@@ -681,6 +823,7 @@ def write_workflow_artifacts(
     extraction: ExtractedPDF,
     sections: list[PreparedSection],
     chapter_splitting: str,
+    portable_format: str,
 ) -> WorkflowArtifacts:
     text_dir = output_dir / "text"
     audio_dir = output_dir / "audio"
@@ -735,6 +878,22 @@ def write_workflow_artifacts(
                 "create portable copies through a local ffmpeg conversion pass."
             ),
         ],
+        "workflow_status": {
+            "text_export": "succeeded",
+            "audio_render": "not_requested",
+            "portable_conversion": "not_requested",
+        },
+        "audio_outputs": {
+            "render_status": "not_requested",
+            "render_error": None,
+            "aiff_files": [],
+            "portable_conversion": {
+                "status": "not_requested",
+                "format": portable_format,
+                "error": None,
+                "files": [],
+            },
+        },
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
@@ -775,7 +934,16 @@ def render_section_audio(
             detail = (result.stderr or "").strip() or (
                 f"macOS say exited with status {result.returncode}."
             )
-            raise AudiobookRenderError(f"Audio rendering failed for {text_path.name}: {detail}")
+            raise AudiobookRenderError(
+                f"Audio rendering failed for {text_path.name}: {detail}",
+                audio_paths=audio_paths,
+            )
+        if not audio_path.exists():
+            raise AudiobookRenderError(
+                f"Audio rendering reported success for {text_path.name}, "
+                f"but no audio file was created at {audio_path}.",
+                audio_paths=audio_paths,
+            )
         audio_paths.append(audio_path)
     return audio_paths
 
@@ -791,7 +959,8 @@ def convert_audio_outputs(
     ffmpeg_binary = shutil.which("ffmpeg")
     if ffmpeg_binary is None:
         raise AudiobookRenderError(
-            "Portable audio conversion requires ffmpeg, but it was not found in PATH."
+            "Portable audio conversion requires ffmpeg, but it was not found in PATH.",
+            audio_paths=audio_paths,
         )
 
     portable_paths: list[Path] = []
@@ -820,7 +989,16 @@ def convert_audio_outputs(
                 f"ffmpeg exited with status {result.returncode}."
             )
             raise AudiobookRenderError(
-                f"Portable audio conversion failed for {audio_path.name}: {detail}"
+                f"Portable audio conversion failed for {audio_path.name}: {detail}",
+                audio_paths=audio_paths,
+                portable_audio_paths=portable_paths,
+            )
+        if not target_path.exists():
+            raise AudiobookRenderError(
+                f"Portable audio conversion reported success for {audio_path.name}, "
+                f"but no converted file was created at {target_path}.",
+                audio_paths=audio_paths,
+                portable_audio_paths=portable_paths,
             )
         portable_paths.append(target_path)
     return portable_paths
@@ -853,14 +1031,160 @@ def update_manifest_audio_outputs(
     audio_paths: list[Path],
     portable_audio_paths: list[Path],
     portable_format: str,
+    audio_render_status: str,
+    audio_render_error: str | None,
+    portable_conversion_status: str,
+    portable_conversion_error: str | None,
 ) -> None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["workflow_status"] = {
+        "text_export": "succeeded",
+        "audio_render": audio_render_status,
+        "portable_conversion": portable_conversion_status,
+    }
     manifest["audio_outputs"] = {
+        "render_status": audio_render_status,
+        "render_error": audio_render_error,
         "aiff_files": [str(path.relative_to(output_dir)) for path in audio_paths],
-        "portable_format": portable_format,
-        "portable_files": [str(path.relative_to(output_dir)) for path in portable_audio_paths],
+        "portable_conversion": {
+            "status": portable_conversion_status,
+            "format": portable_format,
+            "error": portable_conversion_error,
+            "files": [
+                str(path.relative_to(output_dir)) for path in portable_audio_paths
+            ],
+        },
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
+def validate_export_directory(path: Path) -> Path:
+    resolved = path.expanduser().resolve()
+    if not resolved.exists():
+        raise InputValidationError(f"Export directory does not exist: {resolved}")
+    if not resolved.is_dir():
+        raise InputValidationError(f"Export path is not a directory: {resolved}")
+    if not (resolved / "text").exists():
+        raise InputValidationError(
+            f"Export directory does not contain a text/ folder: {resolved}"
+        )
+    return resolved
+
+
+def play_export_directory(
+    export_dir: Path,
+    *,
+    play_mode: str,
+    progress: Callable[[str], None],
+) -> tuple[list[Path], str]:
+    assets = collect_export_assets(export_dir)
+    selected_paths, playback_mode = select_playback_paths(assets, play_mode=play_mode)
+    command_name = "afplay" if playback_mode == "audio" else "say"
+    for path in selected_paths:
+        progress(f"Playing {path.name} using {command_name}")
+        command = ["afplay", str(path)] if playback_mode == "audio" else ["say", "-f", str(path)]
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as exc:
+            raise PlaybackError(
+                f"Failed to invoke macOS {command_name} for {path.name}."
+            ) from exc
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip() or (
+                f"macOS {command_name} exited with status {result.returncode}."
+            )
+            raise PlaybackError(f"Playback failed for {path.name}: {detail}")
+    return selected_paths, playback_mode
+
+
+def collect_export_assets(export_dir: Path) -> dict[str, list[Path]]:
+    manifest_path = export_dir / "manifest.json"
+    manifest = {}
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    audio_outputs = manifest.get("audio_outputs", {})
+    portable_payload = audio_outputs.get("portable_conversion", {})
+
+    portable_paths = _resolve_relative_paths(
+        export_dir,
+        portable_payload.get("files", []),
+    )
+    aiff_paths = _resolve_relative_paths(
+        export_dir,
+        audio_outputs.get("aiff_files", []),
+    )
+    if not portable_paths:
+        portable_paths = sorted((export_dir / "audio").glob("*.m4a"))
+        portable_paths.extend(sorted((export_dir / "audio").glob("*.mp3")))
+        portable_paths.extend(sorted((export_dir / "audio").glob("*.wav")))
+    if not aiff_paths:
+        aiff_paths = sorted((export_dir / "audio").glob("*.aiff"))
+
+    text_dir = export_dir / "text"
+    section_text_paths = sorted(
+        path
+        for path in text_dir.glob("*.txt")
+        if path.name != "full_text.txt"
+    )
+    full_text_path = text_dir / "full_text.txt"
+    text_paths = section_text_paths
+    if not text_paths and full_text_path.exists():
+        text_paths = [full_text_path]
+
+    return {
+        "portable": portable_paths,
+        "audio": aiff_paths,
+        "text": text_paths,
+    }
+
+
+def _resolve_relative_paths(output_dir: Path, values: object) -> list[Path]:
+    if not isinstance(values, list):
+        return []
+    resolved_paths: list[Path] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        path = output_dir / value
+        if path.exists():
+            resolved_paths.append(path)
+    return resolved_paths
+
+
+def select_playback_paths(
+    assets: dict[str, list[Path]],
+    *,
+    play_mode: str,
+) -> tuple[list[Path], str]:
+    portable_paths = assets.get("portable", [])
+    audio_paths = assets.get("audio", [])
+    text_paths = assets.get("text", [])
+
+    if play_mode == "audio":
+        selected = portable_paths or audio_paths
+        if not selected:
+            raise PlaybackError(
+                "No generated audio files were found in this export. "
+                "Use --play-mode text to read the exported text aloud instead."
+            )
+        return selected, "audio"
+    if play_mode == "text":
+        if not text_paths:
+            raise PlaybackError("No exported text files were found in this export.")
+        return text_paths, "text"
+
+    if portable_paths or audio_paths:
+        return portable_paths or audio_paths, "audio"
+    if text_paths:
+        return text_paths, "text"
+    raise PlaybackError(
+        "The export does not contain playable audio files or readable text files."
+    )
 
 
 def _print_progress(message: str) -> None:

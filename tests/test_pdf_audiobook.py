@@ -15,9 +15,11 @@ from pdf_audiobook import (
     apply_pronunciation_overrides,
     build_audiobook_from_args,
     build_ffmpeg_command,
+    PlaybackError,
     clean_pdf_text,
     convert_audio_outputs,
     main,
+    play_export_directory,
     render_section_audio,
     split_into_sections,
     update_manifest_audio_outputs,
@@ -96,6 +98,7 @@ def test_extract_workflow_rejects_encrypted_pdf(tmp_path: Path) -> None:
         output_dir=str(tmp_path / "out"),
         chapter_splitting="auto",
         dry_run=True,
+        portable_format="none",
         preview_chars=200,
         pronunciation_file=None,
     )
@@ -119,6 +122,7 @@ def test_extract_workflow_reports_image_only_pdf_without_ocr(tmp_path: Path) -> 
         output_dir=str(tmp_path / "out"),
         chapter_splitting="auto",
         dry_run=True,
+        portable_format="none",
         preview_chars=200,
         pronunciation_file=None,
     )
@@ -220,6 +224,7 @@ def test_build_audiobook_from_args_dry_run_writes_manifest_and_text(tmp_path: Pa
         output_dir=str(tmp_path / "exports"),
         chapter_splitting="auto",
         dry_run=True,
+        portable_format="none",
         preview_chars=120,
         pronunciation_file=None,
     )
@@ -233,6 +238,7 @@ def test_build_audiobook_from_args_dry_run_writes_manifest_and_text(tmp_path: Pa
     manifest = artifacts.manifest_path.read_text(encoding="utf-8")
     assert '"ocr_status": "deferred"' in manifest
     assert '"genre": "guide"' in manifest
+    assert '"audio_render": "not_requested"' in manifest
     assert artifacts.audio_paths == []
 
 
@@ -251,6 +257,7 @@ def test_render_section_audio_invokes_local_say(monkeypatch, tmp_path: Path) -> 
         **_: object,
     ) -> SimpleNamespace:
         recorded_commands.append(command)
+        Path(command[-1]).write_text("fake aiff", encoding="utf-8")
         return SimpleNamespace(returncode=0, stderr="")
 
     monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
@@ -261,6 +268,27 @@ def test_render_section_audio_invokes_local_say(monkeypatch, tmp_path: Path) -> 
         ["say", "-f", str(text_path), "-o", str(audio_dir / "01-section.aiff")]
     ]
     assert audio_paths == [audio_dir / "01-section.aiff"]
+
+
+def test_render_section_audio_requires_created_file(monkeypatch, tmp_path: Path) -> None:
+    output_dir = tmp_path / "book"
+    text_dir = output_dir / "text"
+    audio_dir = output_dir / "audio"
+    text_dir.mkdir(parents=True)
+    audio_dir.mkdir()
+    text_path = text_dir / "01-section.txt"
+    text_path.write_text("Hello local audio.", encoding="utf-8")
+
+    def fake_run(
+        command: list[str],
+        **_: object,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
+
+    with pytest.raises(Exception, match="no audio file was created"):
+        render_section_audio([text_path], progress=lambda _: None)
 
 
 def test_build_ffmpeg_command_uses_expected_codec_for_portable_format(tmp_path: Path) -> None:
@@ -305,6 +333,7 @@ def test_convert_audio_outputs_invokes_ffmpeg(monkeypatch, tmp_path: Path) -> No
 
     def fake_run(command: list[str], **_: object) -> SimpleNamespace:
         recorded_commands.append(command)
+        Path(command[-1]).write_text("fake wav", encoding="utf-8")
         return SimpleNamespace(returncode=0, stderr="")
 
     monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
@@ -346,12 +375,132 @@ def test_update_manifest_audio_outputs_records_portable_files(tmp_path: Path) ->
         audio_paths=[audio_path],
         portable_audio_paths=[portable_path],
         portable_format="m4a",
+        audio_render_status="succeeded",
+        audio_render_error=None,
+        portable_conversion_status="succeeded",
+        portable_conversion_error=None,
     )
 
     manifest = manifest_path.read_text(encoding="utf-8")
-    assert '"portable_format": "m4a"' in manifest
+    assert '"audio_render": "succeeded"' in manifest
+    assert '"format": "m4a"' in manifest
     assert '"audio/01-chapter.aiff"' in manifest
     assert '"audio/01-chapter.m4a"' in manifest
+
+
+def test_build_audiobook_from_args_reuses_existing_title_with_unique_directory(
+    monkeypatch, tmp_path: Path
+) -> None:
+    pdf_path = tmp_path / "sample.pdf"
+    write_text_pdf(
+        pdf_path,
+        ["Chapter 1\nHello world from Lulu."],
+        metadata={"Title": "Local PDF Book"},
+    )
+
+    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
+        Path(command[-1]).write_text("fake aiff", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
+
+    args = Namespace(
+        input_pdf=str(pdf_path),
+        title=None,
+        author=None,
+        genre=None,
+        output_dir=str(tmp_path / "exports"),
+        chapter_splitting="auto",
+        dry_run=False,
+        portable_format="none",
+        preview_chars=120,
+        pronunciation_file=None,
+    )
+
+    first = build_audiobook_from_args(args, progress=lambda _: None)
+    second = build_audiobook_from_args(args, progress=lambda _: None)
+
+    assert first.output_dir.name == "local-pdf-book"
+    assert second.output_dir.name == "local-pdf-book-2"
+
+
+def test_build_audiobook_from_args_non_dry_run_updates_manifest_audio_outputs(
+    monkeypatch, tmp_path: Path
+) -> None:
+    pdf_path = tmp_path / "sample.pdf"
+    write_text_pdf(
+        pdf_path,
+        ["Chapter 1\nHello world from Lulu."],
+        metadata={"Title": "Playable Book"},
+    )
+
+    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
+        Path(command[-1]).write_text("fake aiff", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
+
+    args = Namespace(
+        input_pdf=str(pdf_path),
+        title=None,
+        author=None,
+        genre=None,
+        output_dir=str(tmp_path / "exports"),
+        chapter_splitting="auto",
+        dry_run=False,
+        portable_format="none",
+        preview_chars=120,
+        pronunciation_file=None,
+    )
+
+    artifacts = build_audiobook_from_args(args, progress=lambda _: None)
+
+    manifest = artifacts.manifest_path.read_text(encoding="utf-8")
+    assert artifacts.audio_paths
+    assert '"audio_render": "succeeded"' in manifest
+    assert '"render_status": "succeeded"' in manifest
+    assert '"audio/' in manifest
+
+
+def test_play_export_directory_reads_text_when_audio_missing(monkeypatch, tmp_path: Path) -> None:
+    export_dir = tmp_path / "book"
+    text_dir = export_dir / "text"
+    text_dir.mkdir(parents=True)
+    text_path = text_dir / "01-section.txt"
+    text_path.write_text("Hello from text export.", encoding="utf-8")
+    (export_dir / "manifest.json").write_text("{}", encoding="utf-8")
+    recorded_commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
+        recorded_commands.append(command)
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
+
+    played_paths, playback_mode = play_export_directory(
+        export_dir,
+        play_mode="auto",
+        progress=lambda _: None,
+    )
+
+    assert playback_mode == "text"
+    assert played_paths == [text_path]
+    assert recorded_commands == [["say", "-f", str(text_path)]]
+
+
+def test_play_export_directory_requires_audio_when_audio_mode_requested(tmp_path: Path) -> None:
+    export_dir = tmp_path / "book"
+    text_dir = export_dir / "text"
+    text_dir.mkdir(parents=True)
+    (text_dir / "01-section.txt").write_text("Hello from text export.", encoding="utf-8")
+    (export_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(PlaybackError, match="No generated audio files were found"):
+        play_export_directory(
+            export_dir,
+            play_mode="audio",
+            progress=lambda _: None,
+        )
 
 
 def test_main_dry_run_prints_preview(capsys, tmp_path: Path) -> None:
@@ -377,6 +526,7 @@ def test_main_dry_run_prints_preview(capsys, tmp_path: Path) -> None:
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "[lulu-pdf] Success:" in output
+    assert "[lulu-pdf] Media files: 0" in output
     assert "[lulu-pdf] Preview:" in output
     assert "Preview text for Lulu audiobook generati" in output
 

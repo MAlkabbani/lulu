@@ -156,6 +156,16 @@ python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --output-dir ./outputs/audiobooks
 ```
 
+Generate and immediately play the export:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --title "My Local Book" \
+  --author "Example Author" \
+  --output-dir ./outputs/audiobooks \
+  --play-after-export
+```
+
 Generate portable copies with a second local conversion pass:
 
 ```bash
@@ -171,6 +181,7 @@ python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
 - local `.pdf` files only
 - text-based PDFs first
 - macOS-local export through native `say`
+- playback of generated exports through native macOS `afplay` or `say`
 
 ### Current limitations
 
@@ -178,7 +189,31 @@ python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
 - corrupted or unsupported PDFs are rejected with operator-facing errors
 - scanned or image-only PDFs stop early and report that OCR is currently deferred
 - output is section-level AIFF files by default, with optional `wav`, `m4a`, or `mp3` copies when `--portable-format` is requested
+- reruns with the same title create a new unique output folder instead of failing
 - packaged M4B audiobooks are still out of scope
+
+### Playback
+
+Play a previously generated export directory:
+
+```bash
+python3 scripts/pdf_to_audiobook.py \
+  --play-export ./outputs/audiobooks/my-local-book
+```
+
+Force text-to-speech playback from the exported text files:
+
+```bash
+python3 scripts/pdf_to_audiobook.py \
+  --play-export ./outputs/audiobooks/my-local-book \
+  --play-mode text
+```
+
+Operational notes:
+
+- `--dry-run` writes text artifacts and `manifest.json`, but no media files
+- `manifest.json` now records workflow state for text export, audio render, and portable conversion
+- if text exists but media does not, inspect the manifest before assuming generation succeeded
 
 ### Pronunciation overrides
 

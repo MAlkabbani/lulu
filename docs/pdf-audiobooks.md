@@ -13,6 +13,7 @@ Lulu now includes a repo-local PDF-to-audiobook workflow for text-based PDFs.
 Run the workflow from the repo root:
 
 ```bash
+source .venv/bin/activate
 python3 scripts/pdf_to_audiobook.py /path/to/book.pdf --dry-run
 ```
 
@@ -20,6 +21,12 @@ The supported repo-aligned interface is the script wrapper:
 
 ```bash
 python3 scripts/pdf_to_audiobook.py INPUT.pdf [options]
+```
+
+Or, to play an existing export:
+
+```bash
+python3 scripts/pdf_to_audiobook.py --play-export OUTPUT_DIR [options]
 ```
 
 ## Arguments
@@ -34,32 +41,44 @@ python3 scripts/pdf_to_audiobook.py INPUT.pdf [options]
 - `--portable-format none|wav|m4a|mp3`: optional local post-processing step after AIFF generation
 - `--preview-chars`: preview length printed in dry-run mode
 - `--pronunciation-file`: optional JSON file for simple replacement-based pronunciation overrides
+- `--play-export`: play an existing export directory instead of generating a new one
+- `--play-after-export`: play the export immediately after generation finishes
+- `--play-mode auto|audio|text`: prefer generated audio or exported text during playback
 
 ## Examples
 
 Preview the cleaned text without generating audio:
 
 ```bash
-python3 scripts/pdf_to_audiobook.py ./samples/book.pdf \
-  --title "My Local Book" \
-  --author "Example Author" \
+source .venv/bin/activate
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --dry-run
 ```
 
-Generate local AIFF chapter files:
+Generate local AIFF section files:
 
 ```bash
-python3 scripts/pdf_to_audiobook.py ./samples/book.pdf \
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --title "My Local Book" \
   --author "Example Author" \
   --genre nonfiction \
   --output-dir ./outputs/audiobooks
 ```
 
+Generate audio and start listening immediately:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --title "My Local Book" \
+  --author "Example Author" \
+  --output-dir ./outputs/audiobooks \
+  --play-after-export
+```
+
 Generate AIFF files plus portable M4A copies:
 
 ```bash
-python3 scripts/pdf_to_audiobook.py ./samples/book.pdf \
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --title "My Local Book" \
   --author "Example Author" \
   --output-dir ./outputs/audiobooks \
@@ -69,7 +88,7 @@ python3 scripts/pdf_to_audiobook.py ./samples/book.pdf \
 Disable chapter detection and export a single section:
 
 ```bash
-python3 scripts/pdf_to_audiobook.py ./samples/book.pdf \
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --chapter-splitting none
 ```
 
@@ -83,13 +102,36 @@ Use pronunciation replacements:
 ```
 
 ```bash
-python3 scripts/pdf_to_audiobook.py ./samples/book.pdf \
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --pronunciation-file ./pronunciations.json
 ```
 
+Play a previously generated export:
+
+```bash
+python3 scripts/pdf_to_audiobook.py \
+  --play-export ./outputs/audiobooks/my-local-book
+```
+
+Read exported text aloud instead of playing audio files:
+
+```bash
+python3 scripts/pdf_to_audiobook.py \
+  --play-export ./outputs/audiobooks/my-local-book \
+  --play-mode text
+```
+
+Before you run these examples:
+
+- replace `/path/to/book.pdf` with a real local PDF path
+- run from the repo root if you want `./outputs/audiobooks` to resolve inside this repository
+- use an absolute `--output-dir` if you want exports written elsewhere
+- replace `./outputs/audiobooks/my-local-book` with the exact folder Lulu prints after generation
+- if you rerun the same title, expect a new folder such as `my-local-book-2`
+
 ## What It Produces
 
-Each run writes a dedicated book directory under the selected output root:
+Each run writes a dedicated book directory under the selected output root. If a folder with the same title already exists, Lulu creates a new unique directory such as `my-local-book-2` instead of failing:
 
 ```text
 outputs/audiobooks/
@@ -113,8 +155,33 @@ outputs/audiobooks/
 - extraction counts and empty-page counts
 - OCR status
 - AIFF outputs and any optional portable-format outputs
+- workflow status for text export, audio render, and portable conversion
+- render/conversion errors when a run stops after writing text artifacts
 - section list, text files, and word counts
 - explicit limitations of the current workflow
+
+## Listening To The Result
+
+The PDF workflow can now both generate exports and play them back locally.
+
+- `--play-after-export` starts playback immediately after a successful generation run
+- `--play-export OUTPUT_DIR` plays a previously generated export directory
+- `--play-mode auto` prefers generated audio files and falls back to exported text when no audio files exist
+- `--play-mode audio` requires generated audio files and fails clearly if none are present
+- `--play-mode text` reads the exported text files aloud with macOS `say`
+
+What gets played:
+
+- portable files first when they exist (`m4a`, `mp3`, or `wav`)
+- otherwise AIFF files under `audio/`
+- otherwise exported per-section text files under `text/`
+
+Important:
+
+- `--dry-run` never creates media files
+- `--dry-run --play-after-export --play-mode text` is the fastest way to preview the cleaned text as speech
+- if you only see `text/` plus `manifest.json`, check `manifest.json` before assuming the export succeeded
+- `--play-export` expects a generated export directory, not the original PDF path
 
 ## Text Preparation
 
@@ -160,13 +227,31 @@ Provide a decrypted local copy before running the workflow.
 
 The PDF is likely scanned or image-only. OCR is not included yet in the repo-default path.
 
+### "I only got text files and no media files"
+
+- if you used `--dry-run`, this is expected because dry-run writes text only
+- if you expected audio, inspect `manifest.json` for `workflow_status` and `audio_outputs`
+- if you used `--play-export`, make sure you passed the generated export directory and not the source PDF path
+- if you just want the cleaned text spoken aloud, run:
+
+```bash
+python3 scripts/pdf_to_audiobook.py --play-export /path/to/export --play-mode text
+```
+
 ### "Output directory already exists"
 
-Choose a different `--output-dir` or override the title so Lulu writes to a new book directory.
+Lulu now auto-creates a new unique folder for reruns, such as `my-local-book-2`.
 
 ### "`say` could not run"
 
-This workflow depends on the native macOS `say` command and is only supported on macOS.
+This workflow depends on the native macOS `say` command and is only supported on macOS. The same applies to text playback with `--play-mode text`.
+
+### "No generated audio files were found"
+
+The export has no playable audio files yet. Either:
+
+- rerun the PDF export without `--dry-run`, or
+- use `--play-mode text` to have Lulu read the exported text aloud
 
 ### "Portable audio conversion requires ffmpeg"
 

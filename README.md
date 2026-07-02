@@ -172,9 +172,10 @@ This workflow:
 
 - validates local PDF paths and rejects encrypted or corrupted files safely
 - cleans common PDF artifacts such as repeated headers, footers, page numbers, and broken wraps
-- detects chapter boundaries conservatively, including short title-like subtitles after chapter headings
+- detects section boundaries conservatively, including short title-like subtitles after chapter headings
 - writes cleaned text plus local AIFF section files with native macOS `say`
 - can optionally post-process those AIFF files into `wav`, `m4a`, or `mp3` with local `ffmpeg`
+- can now play generated exports directly or read exported text aloud on demand
 - stops on scanned or image-only PDFs and reports that OCR is currently deferred
 
 ## How To Use PDF Audiobooks
@@ -182,10 +183,13 @@ This workflow:
 End-user flow from the repo root:
 
 1. Install the repo dependencies and activate `.venv`.
-2. Run a dry-run first to confirm Lulu can read and clean the PDF text.
-3. Generate AIFF chapter files once the preview looks right.
+2. Replace `/path/to/book.pdf` with a real local PDF path on your machine.
+3. Run a dry-run first to confirm Lulu can read and clean the PDF text.
+4. Generate section audio once the preview looks right.
 4. Add `--portable-format` only if you also want `wav`, `m4a`, or `mp3` copies.
-5. Open the generated book folder under `outputs/audiobooks/` and use `manifest.json` as the run summary.
+5. Use `--play-after-export` to listen immediately, or `--play-export` to play an existing export later.
+6. Check `manifest.json` for the run summary, including whether audio render and portable conversion succeeded.
+7. Reruns with the same title now create a new unique folder instead of failing.
 
 Recommended first run:
 
@@ -203,6 +207,16 @@ python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --output-dir ./outputs/audiobooks
 ```
 
+Generate audio and start listening immediately:
+
+```bash
+python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
+  --title "My Local Book" \
+  --author "Example Author" \
+  --output-dir ./outputs/audiobooks \
+  --play-after-export
+```
+
 If you also want a more portable local format:
 
 ```bash
@@ -213,13 +227,50 @@ python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --portable-format m4a
 ```
 
+Play an existing export later:
+
+```bash
+python3 scripts/pdf_to_audiobook.py \
+  --play-export ./outputs/audiobooks/my-local-book
+```
+
+Read exported text aloud instead of playing audio files:
+
+```bash
+python3 scripts/pdf_to_audiobook.py \
+  --play-export ./outputs/audiobooks/my-local-book \
+  --play-mode text
+```
+
 What the end-user gets:
 
 - `text/full_text.txt`: cleaned full-book text
 - `text/*.txt`: per-section text files after chapter splitting
 - `audio/*.aiff`: default local audio exports from macOS `say`
 - `audio/*.<format>`: optional portable copies when `--portable-format` is used
-- `manifest.json`: metadata, extraction summary, output file list, and limitations
+- `manifest.json`: metadata, extraction summary, output file list, render/conversion status, and limitations
+
+How to listen:
+
+- `--play-after-export` plays the newly generated export immediately after the run completes
+- `--play-export <export-dir>` plays a previously generated export directory
+- `--play-mode auto` prefers generated audio and falls back to exported text when no audio files exist
+- `--play-mode text` forces Lulu to read the exported text files aloud with macOS `say`
+- `--dry-run` never creates media files; it only writes text artifacts plus the manifest
+
+Operator notes:
+
+- run commands from the repo root so relative paths like `./outputs/audiobooks` resolve where you expect
+- use an absolute PDF path if the source file lives outside the repo
+- replace `./outputs/audiobooks/my-local-book` with the exact folder name Lulu prints after a successful run
+- if you rerun the same title, Lulu may create `my-local-book-2`, `my-local-book-3`, and so on
+
+If you see text files but no media files:
+
+- the run used `--dry-run`, so no audio was supposed to be generated
+- audio rendering failed after text export, so inspect `manifest.json` for render status and error details
+- the PDF produced readable text but you still need either a full export or `--play-mode text` to hear it
+- portable files were requested but `ffmpeg` was unavailable, so only AIFF output can be expected
 
 When to expect a refusal instead of output:
 
