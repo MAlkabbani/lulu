@@ -174,7 +174,7 @@ The native contract removes ambiguity around tool-calling behavior and keeps the
 - Title: Split Deterministic Memory Saves From Conversational Turns
 - Status: Accepted and shipped
 - Date: 2026-07-01
-- Last Updated: 2026-07-01
+- Last Updated: 2026-07-02
 
 ### Context
 
@@ -196,11 +196,11 @@ The product needed to support both direct user-controlled memory writes and auto
 Use a hybrid router with two paths:
 
 - explicit `insert info` bypass for deterministic saves
-- normal conversational path with optional `save_to_memory` tool use
+- normal conversational path with optional `save_to_memory` tool use through a validated backend tool registry
 
 ### Rationale
 
-This preserves user control, reduces compute on deterministic save requests, and still allows agentic memory capture when users speak naturally.
+This preserves user control, reduces compute on deterministic save requests, and still allows agentic memory capture when users speak naturally. The registry-backed tool path keeps the safety boundary in Python by separating tool metadata, schema validation, and execution while preserving the current single-tool scope.
 
 ### Tradeoffs
 
@@ -217,6 +217,7 @@ This preserves user control, reduces compute on deterministic save requests, and
 | Date | Change |
 | --- | --- |
 | 2026-07-01 | Initial entry recorded |
+| 2026-07-02 | Replaced the hardcoded tool execution path with a validated registry-backed contract while keeping the single-tool operating model |
 
 ### Evidence
 

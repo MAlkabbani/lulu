@@ -503,6 +503,8 @@ Lulu uses the native Ollama endpoint:
 
 This matters because tool calls are handled using Ollama's native `tool_calls` format. The app does not rely on the OpenAI-compatible `/v1` layer for tool execution.
 
+Tool definitions are registered in Python with explicit metadata, schema validation, and backend executors. The current registry still exposes only one tool, `save_to_memory`, but the contract is now structured instead of hand-coded per call site.
+
 Tool follow-up messages are formatted like this:
 
 ```json
@@ -522,21 +524,45 @@ Tool follow-up messages are formatted like this:
 }
 ```
 
-Then the Python app replies with a tool message:
+Then the Python app replies with a tool message whose `content` is a structured JSON string. Successful tool results use a contract like:
 
 ```json
 {
-  "role": "tool",
+  "ok": true,
   "tool_name": "save_to_memory",
-  "content": "Saved memory: My flight is at 5 PM tomorrow."
+  "result": {
+    "action": "inserted",
+    "memory_id": "memory-id",
+    "text": "My flight is at 5 PM tomorrow.",
+    "tags": ["schedule"],
+    "source": "tool_call",
+    "similarity": null,
+    "matched_memory_id": null,
+    "matched_text": null
+  }
+}
+```
+
+Validation or execution failures use the same envelope with `ok: false` and a stable error payload:
+
+```json
+{
+  "ok": false,
+  "tool_name": "save_to_memory",
+  "error": {
+    "code": "invalid_arguments",
+    "message": "Tool arguments must be a JSON object."
+  }
 }
 ```
 
 ### Safety Guardrails
 
 - The model can request only one supported tool: `save_to_memory`
+- Tool definitions are allowlisted through a backend registry with explicit validators and executors
 - Only one tool round is executed per user turn
-- Tool arguments must be a JSON object
+- Tool arguments must match the registered JSON-schema contract before execution
+- Tool success and failure payloads use a consistent JSON envelope
 - `fact` must be a non-empty string within a configurable max length
 - Memory deduplication uses a configurable semantic threshold and keeps one canonical active record
 - Backend tag classification is validated in Python and falls back to `general` on parse failures
