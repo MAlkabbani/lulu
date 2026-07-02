@@ -13,6 +13,7 @@ This current product baseline is designed for a Mac M1 workflow in July 2026:
 ## Documentation
 
 - [Documentation Index](./docs/README.md)
+- [Installation And Operations Runbook](./docs/operations.md)
 - [Reconstructed Product Requirements Document](./docs/prd.md)
 - [Decision Log](./docs/decision-log.md)
 - [Original Project Blueprint](./Project_Blueprint_AI_Assistant.md)
@@ -20,10 +21,38 @@ This current product baseline is designed for a Mac M1 workflow in July 2026:
 Use these docs by role:
 
 - `README.md`: setup, runtime modes, and day-to-day operator guidance
+- `docs/operations.md`: production-style installation, startup, supervision, and troubleshooting workflows
 - `docs/prd.md`: reconstructed product scope, requirements, user stories, and success metrics
 - `docs/decision-log.md`: strategic and technical rationale behind the current architecture
 - `docs/implementation-plans/`: milestone-by-milestone implementation plans and verification notes
 - `Project_Blueprint_AI_Assistant.md`: original vision and early design intent
+
+## Prerequisites
+
+Before you install Lulu on a fresh system, make sure you have:
+
+- macOS on Apple Silicon
+- Homebrew installed and available in your shell
+- internet access for Homebrew packages and Ollama model downloads
+- microphone hardware available to the current user session
+- permission to allow microphone access for your terminal or IDE host process
+
+## Quick Start
+
+Use the production-style scripts from the repo root:
+
+```bash
+chmod +x scripts/install_lulu.sh scripts/start_lulu.sh
+./scripts/install_lulu.sh
+./scripts/start_lulu.sh
+```
+
+Quick checks:
+
+- Validate installation actions without changing the machine: `./scripts/install_lulu.sh --dry-run`
+- Verify startup prerequisites without launching Lulu: `./scripts/start_lulu.sh --check`
+- Start text mode: `./scripts/start_lulu.sh --mode text`
+- Start turn-based mode: `./scripts/start_lulu.sh --mode turn-based`
 
 ## What Lulu Does
 
@@ -182,6 +211,7 @@ sequenceDiagram
 
 ```text
 .
+├── .env.example
 ├── .gitignore
 ├── README.md
 ├── Project_Blueprint_AI_Assistant.md
@@ -192,6 +222,7 @@ sequenceDiagram
 │   │   ├── a1-memory-deduplication-and-categories.md
 │   │   ├── b1-chunked-tts-streaming.md
 │   │   └── c1-wake-word-continuous-listening.md
+│   ├── operations.md
 │   └── prd.md
 ├── audio_handler.py
 ├── config.py
@@ -202,7 +233,9 @@ sequenceDiagram
 ├── terminal_ui.py
 ├── requirements.txt
 ├── scripts
-│   └── memory_inspect.py
+│   ├── install_lulu.sh
+│   ├── memory_inspect.py
+│   └── start_lulu.sh
 └── tests
     ├── test_continuous_listening.py
     ├── test_llm_router.py
@@ -210,7 +243,38 @@ sequenceDiagram
     └── test_streaming_tts.py
 ```
 
-## Apple Silicon Setup
+## Installation
+
+### Preferred Scripted Workflow
+
+For a fresh machine or a clean bootstrap, use the tracked scripts:
+
+```bash
+chmod +x scripts/install_lulu.sh scripts/start_lulu.sh
+./scripts/install_lulu.sh
+./scripts/start_lulu.sh
+```
+
+What the installer does:
+
+1. validates macOS/Homebrew prerequisites
+2. installs or verifies `python@3.12`, `portaudio`, `ffmpeg`, and `ollama`
+3. creates `.env` from `.env.example` if needed
+4. creates `.venv` and installs `requirements.txt`
+5. starts Ollama if it is offline
+6. validates or pulls the required Ollama models
+7. verifies the Python runtime imports cleanly
+
+What the startup wrapper does:
+
+1. loads `.env`
+2. verifies `.venv`
+3. verifies or starts Ollama
+4. checks required Ollama models
+5. launches Lulu in the selected mode
+6. monitors the process and performs graceful shutdown on `SIGINT` or `SIGTERM`
+
+### Manual Apple Silicon Setup
 
 ### 1. Install system dependencies
 
@@ -270,7 +334,35 @@ curl http://localhost:11434/api/tags
 
 On first use, macOS should prompt for microphone access for the terminal or IDE host process running Lulu.
 
-## Run Lulu
+## Runtime Startup
+
+### Preferred Scripted Startup
+
+Voice mode:
+
+```bash
+./scripts/start_lulu.sh
+```
+
+Text-input mode:
+
+```bash
+./scripts/start_lulu.sh --mode text
+```
+
+Turn-based troubleshooting mode:
+
+```bash
+./scripts/start_lulu.sh --mode turn-based
+```
+
+Prerequisite validation only:
+
+```bash
+./scripts/start_lulu.sh --check
+```
+
+## Run Lulu Manually
 
 ### Voice mode
 
@@ -341,7 +433,13 @@ This is useful for checking:
 
 ## Environment Variables
 
-You can override defaults without changing code:
+The startup wrapper loads `.env` automatically if it exists. Start from `.env.example`, then override as needed:
+
+```bash
+cp .env.example .env
+```
+
+Core defaults:
 
 ```bash
 export OLLAMA_BASE_URL="http://localhost:11434"
@@ -368,6 +466,15 @@ export SELF_AUDIO_GUARD_SECONDS="8.0"
 export SELF_AUDIO_SIMILARITY_THRESHOLD="0.74"
 export WAKE_MATCH_SCORE_THRESHOLD="0.86"
 export CONTINUOUS_LISTENING_ENABLED="true"
+```
+
+Script-level startup controls:
+
+```bash
+export LULU_AUTO_START_OLLAMA="true"
+export LULU_RESTART_ON_FAILURE="true"
+export LULU_MAX_RESTARTS="2"
+export LULU_RESTART_BACKOFF_SECONDS="2"
 ```
 
 ## Important Implementation Notes
@@ -555,6 +662,12 @@ source .venv/bin/activate
 python main.py
 ```
 
+Or use the managed startup wrapper:
+
+```bash
+./scripts/start_lulu.sh
+```
+
 ### `python: command not found`
 
 On many macOS shells, `python` is not available until you activate the repo virtual environment.
@@ -564,6 +677,13 @@ Use:
 ```bash
 source .venv/bin/activate
 python main.py
+```
+
+If you are using the production startup path, prefer:
+
+```bash
+./scripts/install_lulu.sh
+./scripts/start_lulu.sh
 ```
 
 If you have not created the virtual environment yet, follow the setup steps above or use `python3` to bootstrap the environment:
@@ -642,6 +762,25 @@ say "Lulu speech check"
 ```
 
 If that fails, the local macOS speech subsystem needs attention before live voice testing.
+
+### Script logs and runtime files
+
+The automation scripts write local operational files to:
+
+```text
+logs/
+run/
+```
+
+Useful files include:
+
+- `logs/install-*.log`
+- `logs/startup-*.log`
+- `logs/ollama-runtime.log`
+- `run/lulu.pid`
+- `run/ollama.pid`
+
+These are ignored by git and are safe to remove when Lulu is not running.
 
 ### Whisper is too slow
 

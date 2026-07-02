@@ -1,6 +1,7 @@
 .DS_Store
 .env
 .env.*
+!.env.example
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -12,6 +13,8 @@ __pycache__/
 
 .venv/
 venv/
+logs/
+run/
 
 vault_db/
 chroma/

@@ -4,6 +4,7 @@ This directory is the public, version-controlled documentation surface for Lulu 
 
 ## Source Of Truth
 
+- [Installation And Operations Runbook](./operations.md)
 - [Product Requirements Document](./prd.md)
 - [Decision Log](./decision-log.md)
 - [Project Blueprint](../Project_Blueprint_AI_Assistant.md)
@@ -30,6 +31,7 @@ These tracked implementation plans explain how major shipped milestones were sco
 ## How To Use These Docs
 
 - Start with the PRD if you need product scope, requirements, user stories, acceptance criteria, and success metrics.
+- Read the operations runbook if you need production-style install, startup, supervision, configuration, or rollback behavior.
 - Read the decision log if you need to understand why a technical or product direction was chosen.
 - Use the project blueprint for the original product vision and stack constraints.
 - Use the implementation plans when planning incremental changes against shipped milestones.
