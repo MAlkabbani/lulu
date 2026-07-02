@@ -164,6 +164,9 @@ ensure_models() {
 }
 
 graceful_shutdown() {
+  if [[ "${SHUTDOWN_REQUESTED}" -eq 1 ]]; then
+    return 0
+  fi
   SHUTDOWN_REQUESTED=1
   log "INFO" "Shutdown requested. Stopping managed processes."
 
@@ -200,9 +203,14 @@ fi
 restart_count=0
 
 while true; do
+  app_command=("${VENV_DIR}/bin/python" "${REPO_ROOT}/main.py")
+  if [[ ${#APP_ARGS[@]} -gt 0 ]]; then
+    app_command+=("${APP_ARGS[@]}")
+  fi
+
   log "INFO" "Starting Lulu in ${MODE} mode."
   log "INFO" "Wrapper log: ${LOG_FILE}"
-  "${VENV_DIR}/bin/python" "${REPO_ROOT}/main.py" "${APP_ARGS[@]}" &
+  "${app_command[@]}" &
   APP_PID="$!"
   printf '%s\n' "${APP_PID}" >"${RUN_DIR}/lulu.pid"
 
