@@ -34,6 +34,7 @@ Support ongoing development: [Buy Me a Coffee](https://buymeacoffee.com/webeworx
 - [Documentation Index](./docs/README.md)
 - [Architecture](./docs/architecture.md)
 - [Operations Runbook](./docs/operations.md)
+- [Uninstall Guide](./docs/operations.md#uninstall)
 - [PDF To Audiobooks](./docs/pdf-audiobooks.md)
 - [Product Requirements](./docs/prd.md)
 - [Decision Log](./docs/decision-log.md)

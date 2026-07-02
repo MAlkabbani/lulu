@@ -206,6 +206,94 @@ export LULU_AUTO_START_OLLAMA="false"
 ./scripts/start_lulu.sh --check
 ```
 
+## Uninstall
+
+Choose the level of removal that matches what you want to keep on the machine.
+
+### Remove the repo checkout only
+
+If you want to remove Lulu source code and its repo-local virtual environment together, delete the repository directory from its parent folder:
+
+```bash
+cd ..
+rm -rf lulu
+```
+
+This removes the checked-out source tree, the local `.venv`, tracked docs, and repo-local generated files that live inside the checkout.
+
+### Remove local runtime data but keep the repo
+
+If you want to keep the source code but clear local runtime state, generated artifacts, and caches from the current checkout:
+
+```bash
+rm -rf .venv
+rm -rf vault_db
+rm -rf logs run
+rm -rf outputs
+rm -rf .pytest_cache .ruff_cache .mypy_cache
+find . -type d -name __pycache__ -prune -exec rm -rf {} +
+rm -f .env .env.*
+```
+
+This keeps the tracked source files while removing the local Python environment, persisted memory store, operational logs, runtime PID files, audiobook outputs, caches, and local environment overrides.
+
+### Remove Lulu and its machine-wide dependencies
+
+Only use this path if the machine-wide tools below were installed specifically for Lulu and are not needed by other projects.
+
+1. Remove the Ollama models used by Lulu:
+
+```bash
+ollama rm llama3.2:3b
+ollama rm nomic-embed-text
+```
+
+2. If you installed shared system dependencies for Lulu through Homebrew and no longer need them elsewhere:
+
+```bash
+brew uninstall ollama
+brew uninstall ffmpeg portaudio
+brew uninstall python@3.12
+```
+
+3. Remove local Ollama data if you want a full model and app cleanup on this Mac:
+
+```bash
+rm -rf ~/.ollama
+rm -rf ~/Library/Application\ Support/Ollama
+rm -rf ~/Library/Saved\ Application\ State/com.electron.ollama.savedState
+rm -rf ~/Library/Caches/com.electron.ollama
+rm -rf ~/Library/Caches/ollama
+rm -rf ~/Library/WebKit/com.electron.ollama
+```
+
+### Revoke microphone access
+
+If you want to remove microphone access after uninstalling Lulu, revoke it for the terminal or IDE host app that ran Lulu in:
+
+- `System Settings > Privacy & Security > Microphone`
+
+### Verify removal
+
+Check whether the repo-local memory store still exists:
+
+```bash
+test -d vault_db && echo "vault_db still present" || echo "vault_db removed"
+```
+
+Check whether the local operational directories still exist:
+
+```bash
+test -d logs && echo "logs still present" || echo "logs removed"
+test -d run && echo "run still present" || echo "run removed"
+```
+
+Check whether Ollama is still installed on the machine:
+
+```bash
+command -v ollama || echo "ollama not found"
+```
+
 ## Configuration Requirements
 
 Copying `.env.example` to `.env` gives you the recommended baseline. The most important operator-facing settings are:
