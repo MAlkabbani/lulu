@@ -367,7 +367,7 @@ Begin playback through smoother grouped chunks while retaining macOS `say` for t
 
 ### Rationale
 
-This keeps the native zero-setup TTS path while reducing chopped playback by buffering the first spoken chunk, grouping short neighboring sentences, preferring clause-aware breaks before hard splits, and merging tiny final tails backward when safe.
+This keeps the native zero-setup TTS path while reducing chopped playback by buffering the first spoken chunk, grouping short neighboring sentences, preferring clause-aware breaks before hard splits, merging tiny final tails backward when safe, and exposing continuity signals in the dashboard for live tuning.
 
 ### Tradeoffs
 
@@ -393,7 +393,9 @@ This keeps the native zero-setup TTS path while reducing chopped playback by buf
 
 - `.trae/documents/b1-chunked-tts-streaming-plan.md`
 - `audio_handler.py`
+- `config.py`
 - `main.py`
+- `terminal_ui.py`
 - `tests/test_streaming_tts.py`
 
 ---
@@ -459,7 +461,7 @@ This constrains the state machine and keeps the current release focused on relia
 - Title: Use Transcript-Gated Wake Matching Instead Of A Dedicated Wake Model
 - Status: Accepted and shipped
 - Date: 2026-07-01
-- Last Updated: 2026-07-01
+- Last Updated: 2026-07-02
 
 ### Context
 
@@ -482,7 +484,7 @@ Use short passive captures, local transcription, scored wake matching for `hey l
 
 ### Rationale
 
-This approach preserves the local stack, handles common Whisper-style confusions, and is observable enough to calibrate through the terminal dashboard.
+This approach preserves the local stack, handles common Whisper-style confusions, and is observable enough to calibrate through the terminal dashboard with live guidance, rejection summaries, and an optional practical voice preset for more forgiving day-to-day use.
 
 ### Tradeoffs
 
@@ -500,6 +502,7 @@ This approach preserves the local stack, handles common Whisper-style confusions
 | Date | Change |
 | --- | --- |
 | 2026-07-01 | Initial entry recorded |
+| 2026-07-02 | Added practical voice preset and richer wake guidance metrics to the shipped operating model |
 
 ### Evidence
 
