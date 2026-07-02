@@ -463,7 +463,7 @@ This constrains the state machine and keeps the current release focused on relia
 ## D-008 Transcript-Gated Wake Detection With Cooldown And Self-Audio Guard
 
 - Decision ID: `D-008`
-- Title: Use Transcript-Gated Wake Matching Instead Of A Dedicated Wake Model
+- Title: Use Hybrid Acoustic Plus Transcript Wake Matching Instead Of A Dedicated Wake Model
 - Status: Accepted and shipped
 - Date: 2026-07-01
 - Last Updated: 2026-07-02
@@ -479,28 +479,29 @@ Lulu needed an always-on interaction model but also had to remain local, lightwe
 
 ### Options Considered
 
-1. Transcript-gated wake scanning with scored phrase matching, cooldown, and transcript similarity guard
+1. Acoustic preprocessing plus DTW wake scanning, transcript confirmation, cooldown, and transcript similarity guard
 2. Exact-match wake detection only
 3. Dedicated wake-word model plus separate echo-cancellation stack
 
 ### Decision
 
-Use short passive captures, local transcription, scored wake matching for `hey lulu`, a fixed follow-up window, cooldown, and recent-speech similarity suppression.
+Use short passive captures, local acoustic preprocessing, MFCC/spectral feature extraction, DTW-assisted wake scoring, transcript confirmation when needed, a fixed follow-up window, cooldown, and recent-speech similarity suppression.
 
 ### Rationale
 
-This approach preserves the local stack, handles common Whisper-style confusions, and is observable enough to calibrate through the terminal dashboard with live guidance, rejection summaries, and an optional practical voice preset for more forgiving day-to-day use.
+This approach preserves the local stack, adds a low-latency acoustic stage before Whisper, handles common pronunciation drift and noisy-room captures more robustly, and stays observable enough to calibrate through the terminal dashboard with live guidance, rejection summaries, signal metrics, and an optional practical voice preset for more forgiving day-to-day use.
 
 ### Tradeoffs
 
 - Benefits:
   - stays within the existing architecture
+  - adds a sub-200 ms acoustic wake candidate path without introducing a separate model runtime
   - easier to debug than a more opaque subsystem
   - tolerates common STT mis-hears
 - Costs:
-  - wake quality depends on transcription quality
+  - wake quality still depends partly on transcription quality when inline requests must be extracted
   - threshold tuning remains product-specific
-  - self-audio suppression is heuristic, not full acoustic echo cancellation
+  - echo suppression remains single-channel and heuristic, not true reference-based acoustic echo cancellation
 
 ### Revision History
 
@@ -508,6 +509,7 @@ This approach preserves the local stack, handles common Whisper-style confusions
 | --- | --- |
 | 2026-07-01 | Initial entry recorded |
 | 2026-07-02 | Added practical voice preset and richer wake guidance metrics to the shipped operating model |
+| 2026-07-02 | Added acoustic preprocessing, DTW wake scoring, fast-path wake acceptance, and synthetic benchmark evidence |
 
 ### Evidence
 
@@ -516,3 +518,6 @@ This approach preserves the local stack, handles common Whisper-style confusions
 - `main.py`
 - `terminal_ui.py`
 - `tests/test_continuous_listening.py`
+- `wake_detection.py`
+- `wake_benchmark.py`
+- `tests/test_wake_benchmark.py`

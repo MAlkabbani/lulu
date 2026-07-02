@@ -56,6 +56,11 @@ class UIState:
     wake_rejection_reasons: Counter[str] = field(default_factory=Counter)
     wake_guidance: str = "Say the wake phrase, pause briefly, then speak your request."
     wake_score_buckets: Counter[str] = field(default_factory=Counter)
+    last_wake_confidence: float | None = None
+    last_wake_acoustic_score: float | None = None
+    last_wake_dtw_score: float | None = None
+    last_wake_snr_db: float | None = None
+    last_wake_feature_frames: int = 0
 
 
 class TerminalUI:
@@ -256,6 +261,25 @@ class TerminalUI:
     def set_wake_guidance(self, message: str) -> None:
         with self._state_lock:
             self.state.wake_guidance = message
+            self._refresh_locked()
+
+    def set_wake_signal_metrics(
+        self,
+        *,
+        confidence: float,
+        threshold: float,
+        acoustic_score: float,
+        dtw_score: float,
+        snr_db: float,
+        feature_frames: int,
+    ) -> None:
+        with self._state_lock:
+            self.state.last_wake_confidence = confidence
+            self.state.wake_score_threshold = threshold
+            self.state.last_wake_acoustic_score = acoustic_score
+            self.state.last_wake_dtw_score = dtw_score
+            self.state.last_wake_snr_db = snr_db
+            self.state.last_wake_feature_frames = feature_frames
             self._refresh_locked()
 
     def record_wake_attempt(
@@ -497,6 +521,46 @@ class TerminalUI:
                 style="bold cyan",
             ),
         )
+        table.add_row(
+            "Confidence",
+            Text(
+                f"{self.state.last_wake_confidence:.2f}"
+                if self.state.last_wake_confidence is not None
+                else "n/a",
+                style="bold green",
+            ),
+        )
+        table.add_row(
+            "Acoustic",
+            Text(
+                f"{self.state.last_wake_acoustic_score:.2f}"
+                if self.state.last_wake_acoustic_score is not None
+                else "n/a",
+                style="bright_magenta",
+            ),
+        )
+        table.add_row(
+            "DTW",
+            Text(
+                f"{self.state.last_wake_dtw_score:.2f}"
+                if self.state.last_wake_dtw_score is not None
+                else "n/a",
+                style="bright_blue",
+            ),
+        )
+        table.add_row(
+            "Signal SNR",
+            Text(
+                f"{self.state.last_wake_snr_db:.1f} dB"
+                if self.state.last_wake_snr_db is not None
+                else "n/a",
+                style="white",
+            ),
+        )
+        table.add_row(
+            "Feature frames",
+            str(self.state.last_wake_feature_frames or 0),
+        )
         table.add_row("Decision", self._wake_decision_text())
         table.add_row(
             "Accepted/Rejected",
@@ -526,6 +590,7 @@ class TerminalUI:
 
         for label in (
             "capture",
+            "wake_audio",
             "stt",
             "router",
             "first_token",

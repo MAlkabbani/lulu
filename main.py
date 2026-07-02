@@ -251,7 +251,72 @@ def _run_continuous_voice_loop(
         if audio is None:
             continue
 
-        transcript = _transcribe_audio(audio_handler, ui, audio, wake_scan=True)
+        wake_analysis = audio_handler.analyze_wake_audio(audio)
+        ui.record_latency("wake_audio", wake_analysis.latency_ms / 1000.0)
+        ui.set_wake_signal_metrics(
+            confidence=wake_analysis.confidence,
+            threshold=wake_analysis.dynamic_threshold,
+            acoustic_score=wake_analysis.acoustic_score,
+            dtw_score=wake_analysis.dtw_score,
+            snr_db=wake_analysis.snr_db,
+            feature_frames=wake_analysis.feature_frames,
+        )
+        if not wake_analysis.candidate:
+            ui.record_wake_attempt(
+                transcript="(acoustic prefilter rejected)",
+                score=wake_analysis.confidence,
+                accepted=False,
+                reason=wake_analysis.reason,
+            )
+            ui.set_response(
+                f"Wake rejected before transcription (confidence {wake_analysis.confidence:.2f})."
+            )
+            ui.set_wake_guidance(
+                "Reduce nearby noise or move closer to the mic, then say the wake phrase clearly."
+            )
+            ui.log_event(
+                f"Rejected wake attempt acoustically before STT (confidence {wake_analysis.confidence:.2f})."
+            )
+            continue
+
+        if (
+            wake_analysis.fast_path_eligible
+            and not _recent_assistant_audio_guard_active(
+                last_assistant_reply_at=last_assistant_reply_at,
+                now=perf_counter(),
+                settings=settings,
+            )
+        ):
+            wake_match = audio_handler.build_fast_path_wake_match(wake_analysis)
+            ui.record_wake_attempt(
+                transcript="(fast acoustic wake)",
+                score=wake_match.score,
+                accepted=True,
+                reason=wake_match.reason,
+            )
+            ui.log_event(
+                f"Accepted fast wake path score={wake_match.score:.2f} without waiting for STT."
+            )
+            ui.log_event(f"Wake phrase detected: {settings.wake_phrase}")
+            ui.set_wake_guidance("Wake matched quickly. Speak your request now.")
+            ui.set_response("Wake matched. Waiting for your request...")
+            conversation_deadline = _next_conversation_deadline(settings)
+            ui.set_conversation_window_remaining(settings.conversation_window_seconds)
+            ui.set_mode(
+                "conversation_window",
+                f"Conversation window active: {settings.conversation_window_seconds:.1f}s remaining",
+            )
+            ui.log_event(
+                f"Conversation window active: {settings.conversation_window_seconds:.1f}s remaining"
+            )
+            continue
+
+        transcript = _transcribe_audio(
+            audio_handler,
+            ui,
+            wake_analysis.processed_audio,
+            wake_scan=True,
+        )
         if not transcript:
             ui.set_response("Wake scan produced no transcript. Listening again...")
             ui.set_wake_guidance(
@@ -259,7 +324,7 @@ def _run_continuous_voice_loop(
             )
             continue
 
-        wake_match = audio_handler.match_wake_phrase(transcript)
+        wake_match = audio_handler.match_wake_phrase(transcript, analysis=wake_analysis)
         if _should_suppress_self_audio_echo(
             transcript=transcript,
             last_assistant_reply=last_assistant_reply,
@@ -345,6 +410,11 @@ def _run_continuous_voice_loop(
 
 def _wake_rejection_response(reason: str, score: float, settings: Settings) -> str:
     phrase = settings.wake_phrase
+    if reason == "acoustic-reject":
+        return (
+            f"Wake rejected before transcription: the audio pattern did not confidently match '{phrase}' "
+            f"(confidence {score:.2f})."
+        )
     if reason == "too-short":
         return f"Wake rejected: heard only a short fragment. Try saying '{phrase}' more fully."
     if reason == "self-audio-guard":
@@ -359,6 +429,10 @@ def _wake_rejection_response(reason: str, score: float, settings: Settings) -> s
 
 def _wake_rejection_guidance(reason: str, settings: Settings) -> str:
     phrase = settings.wake_phrase
+    if reason == "acoustic-reject":
+        return (
+            f"Reduce background noise if possible, move closer to the mic, and say '{phrase}' in one short phrase."
+        )
     if reason == "too-short":
         return f"Say '{phrase}' clearly and let the phrase finish before your request."
     if reason == "below-threshold":
@@ -730,6 +804,17 @@ def _should_suppress_self_audio_echo(
     )
 
     return reply_match or chunk_match
+
+
+def _recent_assistant_audio_guard_active(
+    last_assistant_reply_at: float,
+    now: float,
+    settings: Settings,
+) -> bool:
+    return bool(
+        last_assistant_reply_at
+        and now - last_assistant_reply_at <= settings.self_audio_guard_seconds
+    )
 
 
 if __name__ == "__main__":

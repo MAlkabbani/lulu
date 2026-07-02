@@ -17,6 +17,7 @@ import sounddevice as sd
 from mlx_whisper import transcribe
 
 from config import Settings
+from wake_detection import WakeAudioAnalysis, WakeWordEngine, combine_wake_confidence
 
 
 class AudioCaptureError(RuntimeError):
@@ -40,6 +41,12 @@ class WakeMatch:
     matched: bool
     remainder: str = ""
     score: float = 0.0
+    confidence: float = 0.0
+    transcript_score: float = 0.0
+    acoustic_score: float = 0.0
+    dtw_score: float = 0.0
+    threshold: float = 0.0
+    snr_db: float = 0.0
     matched_prefix: str = ""
     reason: str = ""
 
@@ -268,6 +275,7 @@ class MacOSTTS:
 class AudioHandler:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._wake_engine = WakeWordEngine(settings)
 
     def record_until_silence(self) -> np.ndarray | None:
         return self._record_until_silence(
@@ -371,18 +379,74 @@ class AudioHandler:
             return ""
         return self.transcribe_audio(audio)
 
-    def match_wake_phrase(self, transcript: str) -> WakeMatch:
+    def analyze_wake_audio(self, audio: np.ndarray) -> WakeAudioAnalysis:
+        return self._wake_engine.analyze(audio)
+
+    def match_wake_phrase(
+        self,
+        transcript: str,
+        analysis: WakeAudioAnalysis | None = None,
+    ) -> WakeMatch:
         normalized = normalize_text(transcript)
         wake_phrase = normalize_text(self.settings.wake_phrase)
         if not normalized or not wake_phrase:
             return WakeMatch(matched=False, reason="empty")
 
-        score_result = score_wake_phrase_match(
+        transcript_match = score_wake_phrase_match(
             transcript=normalized,
             wake_phrase=wake_phrase,
             threshold=self.settings.wake_match_score_threshold,
         )
-        return score_result
+        if analysis is None:
+            return WakeMatch(
+                matched=transcript_match.matched,
+                remainder=transcript_match.remainder,
+                score=transcript_match.score,
+                confidence=transcript_match.score,
+                transcript_score=transcript_match.score,
+                matched_prefix=transcript_match.matched_prefix,
+                reason=transcript_match.reason,
+            )
+
+        confidence, threshold = combine_wake_confidence(
+            transcript_score=transcript_match.score,
+            analysis=analysis,
+            settings=self.settings,
+        )
+        matched = (
+            transcript_match.matched
+            or (
+                transcript_match.score >= self.settings.wake_transcript_score_floor
+                and confidence >= threshold
+            )
+        )
+        reason = "probabilistic-match" if matched else transcript_match.reason or "below-threshold"
+        return WakeMatch(
+            matched=matched,
+            remainder=transcript_match.remainder if matched else "",
+            score=confidence,
+            confidence=confidence,
+            transcript_score=transcript_match.score,
+            acoustic_score=analysis.acoustic_score,
+            dtw_score=analysis.dtw_score,
+            threshold=threshold,
+            snr_db=analysis.snr_db,
+            matched_prefix=transcript_match.matched_prefix,
+            reason=reason,
+        )
+
+    def build_fast_path_wake_match(self, analysis: WakeAudioAnalysis) -> WakeMatch:
+        return WakeMatch(
+            matched=True,
+            score=analysis.confidence,
+            confidence=analysis.confidence,
+            acoustic_score=analysis.acoustic_score,
+            dtw_score=analysis.dtw_score,
+            threshold=analysis.dynamic_threshold,
+            snr_db=analysis.snr_db,
+            matched_prefix=self.settings.wake_phrase,
+            reason="acoustic-fast-path",
+        )
 
     def _write_temp_wav(self, audio: np.ndarray) -> Path:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
