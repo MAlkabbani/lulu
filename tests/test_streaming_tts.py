@@ -33,6 +33,8 @@ def build_settings() -> Settings:
         tts_stream_start_buffer_chars=18,
         tts_stream_group_target_chars=32,
         tts_stream_max_group_sentences=2,
+        tts_stream_tail_merge_chars=24,
+        tts_stream_tail_merge_overflow_chars=24,
         tts_stream_soft_chunk_chars=32,
         tts_stream_max_chunk_chars=56,
     )
@@ -149,8 +151,31 @@ def test_stream_and_chunk_delays_first_playback_until_buffer_threshold() -> None
     assert next(stream) == "Hello world. "
     assert tts.chunks == []
     assert next(stream) == "Another sentence."
-    assert tts.chunks == ["Hello world.", "Another sentence."]
+    assert tts.chunks == ["Hello world."]
     assert list(stream) == []
+    assert tts.chunks == ["Hello world.", "Another sentence."]
+
+
+def test_stream_and_chunk_merges_short_final_tail_before_playback() -> None:
+    settings = Settings()
+    chunker = PhraseChunker(settings)
+    tts = FakeTTS()
+    ui = FakeUI()
+    response_parts: list[str] = []
+    text = " ".join(["word"] * 52) + " done now."
+
+    list(
+        _stream_and_chunk(
+            stream_source=iter([text[:200], text[200:]]),
+            settings=settings,
+            chunker=chunker,
+            tts=tts,
+            ui=ui,
+            response_parts=response_parts,
+        )
+    )
+
+    assert tts.chunks == [text]
 
 
 def test_macos_tts_queue_preserves_chunk_order(monkeypatch) -> None:

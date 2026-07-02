@@ -44,6 +44,12 @@ class Settings:
     tts_stream_max_group_sentences: int = int(
         os.getenv("TTS_STREAM_MAX_GROUP_SENTENCES", "2")
     )
+    tts_stream_tail_merge_chars: int = int(
+        os.getenv("TTS_STREAM_TAIL_MERGE_CHARS", "40")
+    )
+    tts_stream_tail_merge_overflow_chars: int = int(
+        os.getenv("TTS_STREAM_TAIL_MERGE_OVERFLOW_CHARS", "48")
+    )
     tts_stream_soft_chunk_chars: int = int(
         os.getenv("TTS_STREAM_SOFT_CHUNK_CHARS", "150")
     )

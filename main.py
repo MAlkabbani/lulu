@@ -525,23 +525,27 @@ def _stream_and_chunk(
         response_parts.append(piece)
         ui.set_response("".join(response_parts).strip())
         for chunk in chunker.push(piece):
+            pending_chunks.append(chunk)
             if playback_started:
-                _emit_chunk(tts=tts, ui=ui, chunk=chunk)
-            else:
-                pending_chunks.append(chunk)
+                _emit_ready_chunks_with_lookahead(
+                    tts=tts,
+                    ui=ui,
+                    pending_chunks=pending_chunks,
+                )
         if not playback_started and _should_start_playback(
             settings=settings,
             pending_chunks=pending_chunks,
         ):
-            _emit_pending_chunks(tts=tts, ui=ui, pending_chunks=pending_chunks)
+            _emit_ready_chunks_with_lookahead(
+                tts=tts,
+                ui=ui,
+                pending_chunks=pending_chunks,
+            )
             playback_started = True
         yield piece
 
-    for chunk in chunker.finish():
-        if playback_started:
-            _emit_chunk(tts=tts, ui=ui, chunk=chunk)
-        else:
-            pending_chunks.append(chunk)
+    pending_chunks.extend(chunker.finish())
+    _merge_short_final_pending_tail(settings=settings, pending_chunks=pending_chunks)
     _emit_pending_chunks(tts=tts, ui=ui, pending_chunks=pending_chunks)
 
 
@@ -564,6 +568,37 @@ def _emit_pending_chunks(
 ) -> None:
     while pending_chunks:
         _emit_chunk(tts=tts, ui=ui, chunk=pending_chunks.pop(0))
+
+
+def _emit_ready_chunks_with_lookahead(
+    tts: MacOSTTS,
+    ui: TerminalUI,
+    pending_chunks: list[str],
+) -> None:
+    while len(pending_chunks) > 1:
+        _emit_chunk(tts=tts, ui=ui, chunk=pending_chunks.pop(0))
+
+
+def _merge_short_final_pending_tail(
+    settings: Settings,
+    pending_chunks: list[str],
+) -> None:
+    if len(pending_chunks) < 2:
+        return
+
+    tail_chunk = pending_chunks[-1].strip()
+    if len(tail_chunk) > settings.tts_stream_tail_merge_chars:
+        return
+
+    merged_candidate = f"{pending_chunks[-2].rstrip()} {tail_chunk}".strip()
+    max_merged_length = (
+        settings.tts_stream_max_chunk_chars
+        + settings.tts_stream_tail_merge_overflow_chars
+    )
+    if len(merged_candidate) > max_merged_length:
+        return
+
+    pending_chunks[-2:] = [merged_candidate]
 
 
 def _emit_chunk(

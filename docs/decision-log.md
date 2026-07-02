@@ -338,13 +338,13 @@ This provides immediate visibility into voice capture, routing, memory, streamin
 
 ---
 
-## D-006 Phrase-Boundary Streaming On Native macOS TTS
+## D-006 Stream Replies In Smoother Grouped Chunks On Native macOS TTS
 
 - Decision ID: `D-006`
-- Title: Stream Replies In Phrase Chunks While Keeping Native `say`
+- Title: Stream Replies In Smoother Grouped Chunks While Keeping Native `say`
 - Status: Accepted and shipped
 - Date: 2026-07-01
-- Last Updated: 2026-07-01
+- Last Updated: 2026-07-02
 
 ### Context
 
@@ -357,26 +357,28 @@ The product needed lower perceived latency than full-response playback, but it a
 
 ### Options Considered
 
-1. Phrase-boundary streaming on top of macOS `say`
+1. Smaller phrase-boundary streaming on top of macOS `say`
 2. Wait for full response completion before starting TTS
 3. Replace native TTS immediately with a higher-fidelity local engine
 
 ### Decision
 
-Begin playback through phrase-boundary chunking while retaining macOS `say` for the current release.
+Begin playback through smoother grouped chunks while retaining macOS `say` for the current release.
 
 ### Rationale
 
-This improves perceived responsiveness now without blocking on a more complex TTS upgrade.
+This keeps the native zero-setup TTS path while reducing chopped playback by buffering the first spoken chunk, grouping short neighboring sentences, and merging tiny final tails backward when safe.
 
 ### Tradeoffs
 
 - Benefits:
-  - lower perceived latency
+  - much smoother end-of-sentence playback than smaller phrase chunks
+  - still starts before full-response completion
   - no new heavyweight dependency
   - modular upgrade path for later TTS replacement
 - Costs:
-  - speech can sound choppier than larger chunks
+  - first spoken output is slightly later than the original latency-first policy
+  - some seams can still remain because native `say` is restarted per chunk
   - voice quality remains limited by native `say`
 
 ### Revision History
@@ -384,6 +386,7 @@ This improves perceived responsiveness now without blocking on a more complex TT
 | Date | Change |
 | --- | --- |
 | 2026-07-01 | Initial entry recorded |
+| 2026-07-02 | Revised to smoothness-first grouped playback with tail-merge protection |
 
 ### Evidence
 

@@ -65,7 +65,26 @@ class PhraseChunker:
             if chunk is None:
                 break
             ready.append(chunk)
+        if final:
+            ready = self._merge_short_final_tail(ready)
         return ready
+
+    def _merge_short_final_tail(self, ready: list[str]) -> list[str]:
+        if len(ready) < 2:
+            return ready
+
+        last_chunk = ready[-1].strip()
+        if len(last_chunk) > self.settings.tts_stream_tail_merge_chars:
+            return ready
+
+        merged_candidate = f"{ready[-2].rstrip()} {last_chunk}".strip()
+        max_merged_length = (
+            self.settings.tts_stream_max_chunk_chars
+            + self.settings.tts_stream_tail_merge_overflow_chars
+        )
+        if len(merged_candidate) > max_merged_length:
+            return ready
+        return [*ready[:-2], merged_candidate]
 
     def _extract_next_chunk(self, final: bool) -> str | None:
         trimmed = self.buffer.lstrip()
