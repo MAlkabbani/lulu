@@ -203,12 +203,13 @@ def test_process_transcript_turn_surfaces_tool_success_in_ui() -> None:
     )
 
     assert ui.state.invocation_path == "model_tool_call"
-    assert ui.state.current_tool_status == "save_to_memory succeeded"
+    assert ui.state.action_summary == "Save memory"
+    assert ui.state.current_tool_status == "Save memory completed"
     assert "Saved memory via save_to_memory" in ui.state.last_tool_result
     assert ui.state.recent_saves[0] == "My dentist appointment is on Friday at 2 PM."
-    assert any(event.startswith("Tool selected: save_to_memory") for event in ui.state.recent_events)
-    assert any(event.startswith("Tool running: save_to_memory") for event in ui.state.recent_events)
-    assert any(event.startswith("Tool succeeded:") for event in ui.state.recent_events)
+    assert any(event.startswith("Action selected: Save memory") for event in ui.state.recent_events)
+    assert any(event.startswith("Action running: Save memory") for event in ui.state.recent_events)
+    assert any(event.startswith("Action completed:") for event in ui.state.recent_events)
 
 
 def test_process_transcript_turn_surfaces_chat_only_invocation_in_ui() -> None:
@@ -233,6 +234,7 @@ def test_process_transcript_turn_surfaces_chat_only_invocation_in_ui() -> None:
     )
 
     assert ui.state.invocation_path == "chat_only"
+    assert ui.state.action_summary == "Answer only"
     assert ui.state.current_tool_status == "No backend tool used."
     assert any(
         event == "Normal chat reply; no backend action requested."
@@ -286,6 +288,83 @@ def test_process_transcript_turn_surfaces_tool_limit_in_ui() -> None:
         ui=ui,
     )
 
-    assert ui.state.current_tool_status == "tool limit reached"
+    assert ui.state.action_summary == "Check memory"
+    assert ui.state.current_tool_status == "Action limit reached"
     assert ui.state.last_tool_result == "Stopped backend tool execution after 2 round(s)."
-    assert any(event.startswith("Tool limit reached:") for event in ui.state.recent_events)
+    assert any(event.startswith("Action limit reached:") for event in ui.state.recent_events)
+
+
+def test_process_transcript_turn_surfaces_direct_save_status_in_ui() -> None:
+    ui = TerminalUI(Settings())
+    router = FixedReplyRouter(
+        PreparedTurn(
+            fixed_reply="Information explicitly saved to vault.",
+            memory_hits=[],
+            saved_items=["My dog's name is Nori."],
+            invocation_path="explicit_save",
+            invocation_summary="Deterministic memory save via insert info.",
+        )
+    )
+
+    _process_transcript_turn(
+        transcript="insert info my dog's name is Nori",
+        settings=Settings(tts_stream_min_chunk_chars=8, tts_stream_soft_chunk_chars=24),
+        router=router,
+        ollama_client=StreamingOllamaClient([]),
+        tts=FakeTTS(),
+        ui=ui,
+    )
+
+    assert ui.state.invocation_path == "explicit_save"
+    assert ui.state.action_summary == "Save memory directly"
+    assert ui.state.current_tool_status == "Memory saved directly"
+    assert ui.state.last_tool_result == "Saved via insert info command."
+
+
+def test_process_transcript_turn_surfaces_multi_step_action_summary_in_ui() -> None:
+    ui = TerminalUI(Settings())
+    router = FixedReplyRouter(
+        PreparedTurn(
+            fixed_reply="I found the memory and explained why it matters.",
+            memory_hits=[],
+            saved_items=[],
+            invocation_path="model_tool_call",
+            invocation_summary=(
+                "Natural-language backend actions succeeded: checked memory and explained a stored item."
+            ),
+            tool_traces=[
+                ToolTrace(
+                    tool_name="search_memory",
+                    stage="selected",
+                    detail="Round 1: selected backend action search_memory.",
+                ),
+                ToolTrace(
+                    tool_name="search_memory",
+                    stage="succeeded",
+                    detail="Searched memory via search_memory and found 1 hit(s) for: tea",
+                ),
+                ToolTrace(
+                    tool_name="explain_memory_hit",
+                    stage="selected",
+                    detail="Round 2: selected backend action explain_memory_hit.",
+                ),
+                ToolTrace(
+                    tool_name="explain_memory_hit",
+                    stage="succeeded",
+                    detail="Explained memory tea-1 with category preference and revision count 1.",
+                ),
+            ],
+        )
+    )
+
+    _process_transcript_turn(
+        transcript="What did you find, and why does it matter?",
+        settings=Settings(tts_stream_min_chunk_chars=8, tts_stream_soft_chunk_chars=24),
+        router=router,
+        ollama_client=StreamingOllamaClient([]),
+        tts=FakeTTS(),
+        ui=ui,
+    )
+
+    assert ui.state.action_summary == "Check memory -> Explain memory"
+    assert ui.state.current_tool_status == "Explain memory completed"

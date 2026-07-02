@@ -25,8 +25,10 @@ class UIState:
     response: str = ""
     invocation_path: str = "chat-only"
     invocation_summary: str = "No invocation path yet."
+    action_summary: str = "Awaiting action decision."
     current_tool_status: str = "No backend tool used."
     last_tool_result: str = ""
+    action_steps: list[str] = field(default_factory=list)
     memory_hit_count: int = 0
     emitted_chunk_count: int = 0
     spoken_chunk_count: int = 0
@@ -139,32 +141,55 @@ class TerminalUI:
         with self._state_lock:
             self.state.invocation_path = path
             self.state.invocation_summary = summary
+            if path == "explicit_save":
+                self.state.action_summary = "Save memory directly"
+            elif path == "model_tool_call":
+                self.state.action_summary = "Auto action requested"
+            elif path == "chat_only":
+                self.state.action_summary = "Answer only"
             self._refresh_locked()
 
     def record_tool_activity(self, tool_name: str, stage: str, detail: str) -> None:
         with self._state_lock:
+            friendly_name = self._friendly_tool_name(tool_name)
             if stage == "selected":
-                self.state.current_tool_status = f"{tool_name} selected"
-                event = f"Tool selected: {tool_name}"
+                self.state.current_tool_status = f"{friendly_name} selected"
+                self._remember_action_step(friendly_name)
+                event = f"Action selected: {friendly_name}"
             elif stage == "running":
-                self.state.current_tool_status = f"{tool_name} running"
-                event = f"Tool running: {tool_name}"
+                self.state.current_tool_status = f"{friendly_name} running"
+                event = f"Action running: {friendly_name}"
             elif stage == "succeeded":
-                self.state.current_tool_status = f"{tool_name} succeeded"
+                self.state.current_tool_status = f"{friendly_name} completed"
                 self.state.last_tool_result = detail
-                event = f"Tool succeeded: {detail}"
+                event = f"Action completed: {detail}"
             elif stage == "failed":
-                self.state.current_tool_status = f"{tool_name} failed"
+                self.state.current_tool_status = f"{friendly_name} failed"
                 self.state.last_tool_result = detail
-                event = f"Tool failed: {detail}"
+                event = f"Action failed: {detail}"
             elif stage == "limit_reached":
-                self.state.current_tool_status = "tool limit reached"
+                self.state.current_tool_status = "Action limit reached"
                 self.state.last_tool_result = detail
-                event = f"Tool limit reached: {detail}"
+                event = f"Action limit reached: {detail}"
             else:
-                self.state.current_tool_status = f"{tool_name} {stage}"
-                event = f"Tool update: {tool_name} {stage}"
+                self.state.current_tool_status = f"{friendly_name} {stage}"
+                event = f"Action update: {friendly_name} {stage}"
             self.log_event(event, refresh=False)
+            self._refresh_locked()
+
+    def record_explicit_save(self, updated: bool) -> None:
+        with self._state_lock:
+            self.state.action_steps = ["Save memory directly"]
+            self.state.action_summary = "Save memory directly"
+            self.state.current_tool_status = (
+                "Memory updated directly" if updated else "Memory saved directly"
+            )
+            self.state.last_tool_result = (
+                "Updated via insert info command."
+                if updated
+                else "Saved via insert info command."
+            )
+            self.log_event(self.state.last_tool_result, refresh=False)
             self._refresh_locked()
 
     def set_memory_hits(self, count: int) -> None:
@@ -285,8 +310,10 @@ class TerminalUI:
             self.state.response = ""
             self.state.invocation_path = "chat-only"
             self.state.invocation_summary = "Awaiting invocation decision."
+            self.state.action_summary = "Awaiting action decision."
             self.state.current_tool_status = "No backend tool used."
             self.state.last_tool_result = ""
+            self.state.action_steps = []
             self._refresh_locked()
 
     def prompt_text(self) -> str:
@@ -383,6 +410,10 @@ class TerminalUI:
             ),
         )
         table.add_row("Path", self._invocation_badge())
+        table.add_row(
+            "Action flow",
+            Text(self.state.action_summary, style="bold white", overflow="fold"),
+        )
         table.add_row(
             "Tool",
             self._tool_status_text(),
@@ -560,9 +591,9 @@ class TerminalUI:
 
     def _invocation_badge(self) -> Text:
         labels = {
-            "explicit_save": ("EXPLICIT SAVE", "bold yellow"),
-            "model_tool_call": ("NATURAL TOOL", "bold green"),
-            "chat_only": ("CHAT ONLY", "bold cyan"),
+            "explicit_save": ("DIRECT SAVE", "bold yellow"),
+            "model_tool_call": ("AUTO ACTION", "bold green"),
+            "chat_only": ("ANSWER ONLY", "bold cyan"),
         }
         label, style = labels.get(self.state.invocation_path, (self.state.invocation_path, "bold white"))
         return Text(label, style=style)
@@ -571,13 +602,39 @@ class TerminalUI:
         status = self.state.current_tool_status
         if "failed" in status:
             style = "bold red"
-        elif "succeeded" in status:
+        elif (
+            "completed" in status
+            or "saved directly" in status
+            or "updated directly" in status
+        ):
             style = "bold green"
         elif "running" in status or "selected" in status:
+            style = "bold yellow"
+        elif "limit reached" in status:
             style = "bold yellow"
         else:
             style = "dim"
         return Text(status, style=style, overflow="fold")
+
+    def _remember_action_step(self, friendly_name: str) -> None:
+        if self.state.action_steps and self.state.action_steps[-1] == friendly_name:
+            return
+        self.state.action_steps.append(friendly_name)
+        self.state.action_summary = " -> ".join(self.state.action_steps)
+
+    @staticmethod
+    def _friendly_tool_name(tool_name: str) -> str:
+        labels = {
+            "save_to_memory": "Save memory",
+            "search_memory": "Check memory",
+            "list_recent_memories": "Show recent memories",
+            "explain_memory_hit": "Explain memory",
+            "tool_round_limit": "Action limit",
+            "tool_loop_limit": "Action limit",
+        }
+        if tool_name in labels:
+            return labels[tool_name]
+        return tool_name.replace("_", " ").strip().title()
 
     def _mode_style(self) -> str:
         if "error" in self.state.mode:

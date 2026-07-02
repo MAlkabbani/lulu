@@ -484,6 +484,8 @@ def _process_transcript_turn(
         ui.record_tool_activity(trace.tool_name, trace.stage, trace.detail)
     if prepared.saved_items:
         ui.add_saved_items(prepared.saved_items)
+    if prepared.invocation_path == "explicit_save":
+        ui.record_explicit_save("updated" in prepared.fixed_reply.lower())
 
     if prepared.invocation_path == "explicit_save":
         ui.set_mode("thinking", "Deterministic memory save accepted. Preparing spoken confirmation...")
