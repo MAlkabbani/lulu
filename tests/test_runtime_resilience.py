@@ -238,3 +238,54 @@ def test_process_transcript_turn_surfaces_chat_only_invocation_in_ui() -> None:
         event == "Normal chat reply; no backend action requested."
         for event in ui.state.recent_events
     )
+
+
+def test_process_transcript_turn_surfaces_tool_limit_in_ui() -> None:
+    ui = TerminalUI(Settings())
+    router = FixedReplyRouter(
+        PreparedTurn(
+            fixed_reply="I stopped after the configured backend steps.",
+            memory_hits=[],
+            saved_items=[],
+            invocation_path="model_tool_call",
+            invocation_summary=(
+                "Natural-language backend actions succeeded: 2 step(s) completed. "
+                "Stopped backend tool execution after 2 round(s)."
+            ),
+            tool_traces=[
+                ToolTrace(
+                    tool_name="search_memory",
+                    stage="selected",
+                    detail="Round 1: selected backend action search_memory.",
+                ),
+                ToolTrace(
+                    tool_name="search_memory",
+                    stage="running",
+                    detail="Round 1: running backend action search_memory.",
+                ),
+                ToolTrace(
+                    tool_name="search_memory",
+                    stage="succeeded",
+                    detail="Searched memory via search_memory and found 1 hit(s) for: tea",
+                ),
+                ToolTrace(
+                    tool_name="tool_loop_limit",
+                    stage="limit_reached",
+                    detail="Stopped backend tool execution after 2 round(s).",
+                ),
+            ],
+        )
+    )
+
+    _process_transcript_turn(
+        transcript="Keep checking my tea memories.",
+        settings=Settings(tts_stream_min_chunk_chars=8, tts_stream_soft_chunk_chars=24),
+        router=router,
+        ollama_client=StreamingOllamaClient([]),
+        tts=FakeTTS(),
+        ui=ui,
+    )
+
+    assert ui.state.current_tool_status == "tool limit reached"
+    assert ui.state.last_tool_result == "Stopped backend tool execution after 2 round(s)."
+    assert any(event.startswith("Tool limit reached:") for event in ui.state.recent_events)

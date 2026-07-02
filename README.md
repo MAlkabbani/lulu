@@ -81,12 +81,12 @@ For normal speech, Lulu will:
 
 1. Query ChromaDB for the top 3 relevant memories
 2. Inject those memories, including their backend tags, into the system prompt
-3. Call Ollama `POST /api/chat` with a JSON-schema tool named `save_to_memory`
-4. Let the model decide whether the user shared a durable fact worth remembering
-5. Save the fact natively in Python if the tool is called
-6. Generate a final spoken reply
+3. Call Ollama `POST /api/chat` with JSON-schema tools named `save_to_memory` and `search_memory`
+4. Let the model decide whether the turn needs memory inspection, memory save, or both
+5. Execute the selected backend tools natively in Python with bounded per-round and per-turn limits
+6. Generate a final spoken reply after the last tool result handoff
 
-The router intentionally allows only one tool-execution round per turn to avoid recursive tool loops.
+The router now supports bounded multi-tool execution while keeping the tool surface memory-focused and local-first.
 
 ### Memory Invocation Tips
 
@@ -124,7 +124,7 @@ Microphone
      -> Chat path:
         -> Chroma semantic recall
         -> Ollama /api/chat
-        -> optional save_to_memory tool call
+       -> optional bounded memory tool calls
         -> final reply
   -> macOS say
 ```
@@ -176,12 +176,18 @@ sequenceDiagram
     Memory->>Vault: Recall relevant memories
     Vault-->>Memory: Memory hits
     Memory-->>Router: Context with tags
-    Router->>Chat: Chat request with save_to_memory tool
+    Router->>Chat: Chat request with validated memory tools
     alt Tool call requested
-        Chat-->>Router: save_to_memory(fact)
-        Router->>Memory: upsert_memory(fact)
-        Memory->>Vault: Update canonical store
-        Router->>Chat: Tool result
+        alt search_memory
+            Chat-->>Router: search_memory(query, limit)
+            Router->>Memory: query_memory(query)
+        end
+        alt save_to_memory
+            Chat-->>Router: save_to_memory(fact)
+            Router->>Memory: upsert_memory(fact)
+            Memory->>Vault: Update canonical store
+        end
+        Router->>Chat: Tool results
         Chat-->>Main: Final reply
     else No tool call
         Chat-->>Main: Final reply
@@ -519,7 +525,7 @@ Lulu uses the native Ollama endpoint:
 
 This matters because tool calls are handled using Ollama's native `tool_calls` format. The app does not rely on the OpenAI-compatible `/v1` layer for tool execution.
 
-Tool definitions are registered in Python with explicit metadata, schema validation, and backend executors. The current registry still exposes only one tool, `save_to_memory`, but the contract is now structured instead of hand-coded per call site.
+Tool definitions are registered in Python with explicit metadata, schema validation, and backend executors. The current registry exposes `save_to_memory` for durable facts and `search_memory` for read-only conversational lookup.
 
 Tool follow-up messages are formatted like this:
 
@@ -576,12 +582,13 @@ The terminal dashboard now surfaces the invocation path for each turn and the cu
 
 ### Safety Guardrails
 
-- The model can request only one supported tool: `save_to_memory`
+- The model can request only the allowlisted memory tools: `save_to_memory` and `search_memory`
 - Tool definitions are allowlisted through a backend registry with explicit validators and executors
-- Only one tool round is executed per user turn
+- Tool execution is bounded by configurable round and per-round call limits
 - Tool arguments must match the registered JSON-schema contract before execution
 - Tool success and failure payloads use a consistent JSON envelope
 - `fact` must be a non-empty string within a configurable max length
+- `query` must be a non-empty string and `limit` must be a bounded integer for `search_memory`
 - Memory deduplication uses a configurable semantic threshold and keeps one canonical active record
 - Backend tag classification is validated in Python and falls back to `general` on parse failures
 - Retrieved memory is treated as untrusted context, not executable instruction text
@@ -861,6 +868,7 @@ Check that `vault_db/` is being created and that you have saved facts with eithe
 
 - `insert info ...`
 - natural prompts that trigger `save_to_memory`
+- conversational memory-inspection prompts that trigger `search_memory`
 
 ## License
 

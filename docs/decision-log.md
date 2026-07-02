@@ -200,7 +200,7 @@ Use a hybrid router with two paths:
 
 ### Rationale
 
-This preserves user control, reduces compute on deterministic save requests, and still allows agentic memory capture when users speak naturally. The registry-backed tool path keeps the safety boundary in Python by separating tool metadata, schema validation, and execution while preserving the current single-tool scope. The terminal UI now also surfaces whether a turn stayed chat-only, used the explicit save command, or ran the validated backend tool path so users can understand what Lulu actually did.
+This preserves user control, reduces compute on deterministic save requests, and still allows agentic memory capture when users speak naturally. The registry-backed tool path keeps the safety boundary in Python by separating tool metadata, schema validation, and execution while allowing a bounded memory-focused tool surface instead of a single hardcoded save path. The terminal UI now also surfaces whether a turn stayed chat-only, used the explicit save command, or ran the validated backend tool path so users can understand what Lulu actually did.
 
 ### Tradeoffs
 
@@ -219,6 +219,7 @@ This preserves user control, reduces compute on deterministic save requests, and
 | 2026-07-01 | Initial entry recorded |
 | 2026-07-02 | Replaced the hardcoded tool execution path with a validated registry-backed contract while keeping the single-tool operating model |
 | 2026-07-02 | Added user-visible invocation-path and tool-status surfaces to reduce ambiguity between chat, explicit saves, and validated tool use |
+| 2026-07-02 | Expanded the validated memory tool surface to bounded multi-tool rounds with read-only conversational lookup |
 
 ### Evidence
 

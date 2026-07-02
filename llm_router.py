@@ -22,6 +22,22 @@ SAVE_TO_MEMORY_PARAMETERS = {
     "additionalProperties": False,
 }
 
+SEARCH_MEMORY_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "The natural-language memory topic or fact to look up.",
+        },
+        "limit": {
+            "type": "integer",
+            "description": "Optional maximum number of memory hits to return.",
+        },
+    },
+    "required": ["query"],
+    "additionalProperties": False,
+}
+
 ToolValidator = Callable[[dict[str, Any]], dict[str, Any]]
 ToolExecutor = Callable[[dict[str, Any]], "ToolInvocationResult"]
 
@@ -214,7 +230,7 @@ class ToolRegistry:
             expected_python_type = type_map.get(expected_type)
             if expected_python_type is None:
                 continue
-            if expected_type == "number" and isinstance(value, bool):
+            if expected_type in {"number", "integer"} and isinstance(value, bool):
                 raise ToolCallError(
                     "invalid_argument_type",
                     f"Argument {key} must be a {expected_type}.",
@@ -269,6 +285,13 @@ class HybridRouter:
                     parameters=SAVE_TO_MEMORY_PARAMETERS,
                     validator=self._validate_save_to_memory_arguments,
                     executor=self._execute_save_to_memory,
+                ),
+                ToolDefinition(
+                    name="search_memory",
+                    description="Inspect remembered facts relevant to a topic or question.",
+                    parameters=SEARCH_MEMORY_PARAMETERS,
+                    validator=self._validate_search_memory_arguments,
+                    executor=self._execute_search_memory,
                 )
             ]
         )
@@ -337,27 +360,73 @@ class HybridRouter:
 
         memory_hits = self.memory_manager.query_memory(normalized)
         messages = self._build_messages(normalized, memory_hits)
-        initial_response = self.ollama_client.chat(
-            messages=messages,
-            tools=self.tool_registry.definitions(),
-        )
-        assistant_message = initial_response.get("message") or {}
-        tool_calls = self.ollama_client.normalize_tool_calls(assistant_message)
+        saved_items: list[str] = []
+        tool_traces: list[ToolTrace] = []
+        final_messages = list(messages)
+        executed_tool_round = False
 
-        if not tool_calls:
-            return PreparedTurn(
-                fixed_reply="",
-                final_messages=messages,
-                memory_hits=memory_hits,
-                saved_items=[],
-                invocation_path="chat_only",
-                invocation_summary="Normal chat reply; no backend action requested.",
+        for round_index in range(1, self.settings.tool_max_rounds + 1):
+            initial_response = self.ollama_client.chat(
+                messages=final_messages,
+                tools=self.tool_registry.definitions(),
             )
+            assistant_message = initial_response.get("message") or {}
+            tool_calls = self.ollama_client.normalize_tool_calls(assistant_message)
 
-        selected_tool_calls = tool_calls[:1]
-        assistant_tool_message = {"role": "assistant", "tool_calls": selected_tool_calls}
-        tool_messages, saved_items, tool_traces = self._execute_tool_calls(selected_tool_calls)
-        final_messages = messages + [assistant_tool_message] + tool_messages
+            if not tool_calls:
+                if not executed_tool_round:
+                    return PreparedTurn(
+                        fixed_reply="",
+                        final_messages=messages,
+                        memory_hits=memory_hits,
+                        saved_items=[],
+                        invocation_path="chat_only",
+                        invocation_summary="Normal chat reply; no backend action requested.",
+                    )
+                return PreparedTurn(
+                    fixed_reply="",
+                    final_messages=final_messages,
+                    memory_hits=memory_hits,
+                    saved_items=saved_items,
+                    invocation_path="model_tool_call",
+                    invocation_summary=self._summarize_tool_invocation(tool_traces),
+                    tool_traces=tool_traces,
+                )
+
+            executed_tool_round = True
+            selected_tool_calls = tool_calls[: self.settings.tool_max_calls_per_round]
+            skipped_tool_count = len(tool_calls) - len(selected_tool_calls)
+            if skipped_tool_count > 0:
+                tool_traces.append(
+                    ToolTrace(
+                        tool_name="tool_round_limit",
+                        stage="limit_reached",
+                        detail=(
+                            f"Skipped {skipped_tool_count} extra tool call(s) in round "
+                            f"{round_index} due to the per-round limit."
+                        ),
+                    )
+                )
+            assistant_tool_message = {"role": "assistant", "tool_calls": selected_tool_calls}
+            tool_messages, round_saved_items, round_traces = self._execute_tool_calls(
+                selected_tool_calls,
+                round_index,
+            )
+            saved_items.extend(round_saved_items)
+            tool_traces.extend(round_traces)
+            final_messages = final_messages + [assistant_tool_message] + tool_messages
+
+        if executed_tool_round:
+            tool_traces.append(
+                ToolTrace(
+                    tool_name="tool_loop_limit",
+                    stage="limit_reached",
+                    detail=(
+                        f"Stopped backend tool execution after "
+                        f"{self.settings.tool_max_rounds} round(s)."
+                    ),
+                )
+            )
         return PreparedTurn(
             fixed_reply="",
             final_messages=final_messages,
@@ -382,7 +451,9 @@ class HybridRouter:
         ]
 
     def _execute_tool_calls(
-        self, tool_calls: list[dict[str, Any]]
+        self,
+        tool_calls: list[dict[str, Any]],
+        round_index: int,
     ) -> tuple[list[dict[str, str]], list[str], list[ToolTrace]]:
         tool_messages: list[dict[str, str]] = []
         saved_items: list[str] = []
@@ -394,14 +465,14 @@ class HybridRouter:
                 ToolTrace(
                     tool_name=tool_name,
                     stage="selected",
-                    detail=f"Selected backend action {tool_name}.",
+                    detail=f"Round {round_index}: selected backend action {tool_name}.",
                 )
             )
             tool_traces.append(
                 ToolTrace(
                     tool_name=tool_name,
                     stage="running",
-                    detail=f"Running backend action {tool_name}.",
+                    detail=f"Round {round_index}: running backend action {tool_name}.",
                 )
             )
             outcome = self.tool_registry.execute(tool_call)
@@ -437,6 +508,58 @@ class HybridRouter:
             saved_item=fact,
         )
 
+    def _validate_search_memory_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        query = arguments.get("query")
+        if not isinstance(query, str):
+            raise ToolCallError("invalid_argument_type", "Argument query must be a string.")
+        clean_query = query.strip()
+        if not clean_query:
+            raise ToolCallError("invalid_arguments", "Argument query cannot be empty.")
+
+        limit = arguments.get("limit", self.settings.search_memory_default_limit)
+        if not isinstance(limit, int) or isinstance(limit, bool):
+            raise ToolCallError("invalid_argument_type", "Argument limit must be an integer.")
+        if limit < 1:
+            raise ToolCallError("invalid_arguments", "Argument limit must be at least 1.")
+        if limit > self.settings.search_memory_max_limit:
+            raise ToolCallError(
+                "invalid_arguments",
+                (
+                    f"Argument limit cannot exceed "
+                    f"{self.settings.search_memory_max_limit}."
+                ),
+            )
+        return {"query": clean_query, "limit": limit}
+
+    def _execute_search_memory(self, arguments: dict[str, Any]) -> ToolInvocationResult:
+        query = arguments["query"]
+        limit = arguments["limit"]
+        hits = self.memory_manager.query_memory(query, k=limit)
+        result_hits = [
+            {
+                "memory_id": hit.id,
+                "text": hit.text,
+                "tags": hit.tags,
+                "source": hit.metadata.get("source", "unknown"),
+                "similarity": hit.similarity,
+            }
+            for hit in hits
+        ]
+        hit_count = len(result_hits)
+        if hit_count == 0:
+            summary = f"Searched memory via search_memory and found no hits for: {query}"
+        else:
+            summary = f"Searched memory via search_memory and found {hit_count} hit(s) for: {query}"
+        return ToolInvocationResult(
+            result={
+                "query": query,
+                "hit_count": hit_count,
+                "hits": result_hits,
+                "context": self.memory_manager.format_context(hits),
+            },
+            display_summary=summary,
+        )
+
     def _validate_fact(self, fact: Any) -> str:
         if not isinstance(fact, str):
             raise ToolCallError("invalid_argument_type", "Argument fact must be a string.")
@@ -463,12 +586,24 @@ class HybridRouter:
 
     @staticmethod
     def _summarize_tool_invocation(tool_traces: list[ToolTrace]) -> str:
-        final_trace = next(
-            (trace for trace in reversed(tool_traces) if trace.stage in {"succeeded", "failed"}),
-            None,
-        )
-        if final_trace is None:
+        succeeded = [trace for trace in tool_traces if trace.stage == "succeeded"]
+        failed = [trace for trace in tool_traces if trace.stage == "failed"]
+        limit_reached = [trace for trace in tool_traces if trace.stage == "limit_reached"]
+        if not succeeded and not failed:
+            if limit_reached:
+                return f"Natural-language backend action stopped safely: {limit_reached[-1].detail}"
             return "Natural-language backend action requested."
-        if final_trace.stage == "succeeded":
-            return f"Natural-language backend action succeeded: {final_trace.detail}"
-        return f"Natural-language backend action was rejected safely: {final_trace.detail}"
+        if succeeded and not failed:
+            if len(succeeded) == 1 and not limit_reached:
+                return f"Natural-language backend action succeeded: {succeeded[0].detail}"
+            summary = f"Natural-language backend actions succeeded: {len(succeeded)} step(s) completed."
+        elif failed and not succeeded:
+            summary = f"Natural-language backend actions were rejected safely: {len(failed)} step(s) failed."
+        else:
+            summary = (
+                "Natural-language backend actions partially succeeded: "
+                f"{len(succeeded)} succeeded, {len(failed)} failed."
+            )
+        if limit_reached:
+            summary += f" {limit_reached[-1].detail}"
+        return summary

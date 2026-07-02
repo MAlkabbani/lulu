@@ -4,16 +4,27 @@ import json
 
 from config import Settings
 from llm_router import HybridRouter, PreparedTurn
-from memory_manager import MemorySaveResult
+from memory_manager import MemoryHit, MemorySaveResult
 from ollama_client import OllamaClient
 
 
 class FakeMemoryManager:
     def __init__(self, action: str = "inserted", should_fail: bool = False) -> None:
         self.saved: list[tuple[str, str]] = []
+        self.queries: list[tuple[str, int | None]] = []
         self.action = action
         self.should_fail = should_fail
         self.context = "1. [tags: tea, preference] (explicit) My favorite tea is jasmine"
+        self.search_hits: list[MemoryHit] = [
+            MemoryHit(
+                id="memory-id",
+                text="My favorite tea is jasmine",
+                distance=0.08,
+                similarity=0.92,
+                tags=["tea", "preference"],
+                metadata={"source": "explicit"},
+            )
+        ]
 
     def upsert_memory(self, text: str, source: str = "manual") -> MemorySaveResult:
         if self.should_fail:
@@ -30,8 +41,11 @@ class FakeMemoryManager:
             matched_text="My favorite tea is jasmine" if self.action == "updated" else None,
         )
 
-    def query_memory(self, _query_text: str) -> list[object]:
-        return []
+    def query_memory(self, query_text: str, k: int | None = None) -> list[object]:
+        self.queries.append((query_text, k))
+        if k is None:
+            return []
+        return self.search_hits[:k]
 
     def format_context(self, _hits: list[object]) -> str:
         return self.context
@@ -132,7 +146,29 @@ def test_tool_call_saves_memory_and_generates_follow_up() -> None:
                     "additionalProperties": False,
                 },
             },
-        }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_memory",
+                "description": "Inspect remembered facts relevant to a topic or question.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The natural-language memory topic or fact to look up.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Optional maximum number of memory hits to return.",
+                        },
+                    },
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            },
+        },
     ]
 
 
@@ -171,20 +207,23 @@ def test_prepare_turn_returns_streamable_messages_for_non_tool_reply() -> None:
 def test_prepare_turn_streams_only_post_tool_final_messages() -> None:
     memory = FakeMemoryManager()
     ollama = FakeOllamaClient(
-        {
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "save_to_memory",
-                        "arguments": json.dumps(
-                            {"fact": "My dentist appointment is on Friday at 2 PM."}
-                        ),
-                    },
-                }
-            ],
-        }
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "save_to_memory",
+                            "arguments": json.dumps(
+                                {"fact": "My dentist appointment is on Friday at 2 PM."}
+                            ),
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Saved. I will remember that."},
+        ]
     )
     router = HybridRouter(Settings(), ollama, memory)
 
@@ -204,21 +243,203 @@ def test_prepare_turn_streams_only_post_tool_final_messages() -> None:
     assert tool_payload["result"]["text"] == "My dentist appointment is on Friday at 2 PM."
 
 
+def test_prepare_turn_supports_multiple_tools_in_order() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_memory",
+                            "arguments": {"query": "tea preference", "limit": 1},
+                        },
+                    },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "save_to_memory",
+                            "arguments": {"fact": "My favorite tea is jasmine."},
+                        },
+                    },
+                ],
+            },
+            {"role": "assistant", "content": "You like jasmine tea, and I saved the updated phrasing."},
+        ]
+    )
+    router = HybridRouter(Settings(), ollama, memory)
+
+    prepared = router.prepare_turn("Check what tea I like and remember the phrasing.")
+
+    assert prepared.invocation_path == "model_tool_call"
+    assert prepared.saved_items == ["My favorite tea is jasmine."]
+    assert memory.queries[-1] == ("tea preference", 1)
+    assert memory.saved == [("My favorite tea is jasmine.", "tool_call")]
+    tool_names = [message["tool_name"] for message in prepared.final_messages if message["role"] == "tool"]
+    assert tool_names == ["search_memory", "save_to_memory"]
+    assert [trace.stage for trace in prepared.tool_traces] == [
+        "selected",
+        "running",
+        "succeeded",
+        "selected",
+        "running",
+        "succeeded",
+    ]
+
+
+def test_prepare_turn_bounds_tool_rounds() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_memory",
+                            "arguments": {"query": "tea"},
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_memory",
+                            "arguments": {"query": "tea"},
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_memory",
+                            "arguments": {"query": "tea"},
+                        },
+                    }
+                ],
+            },
+        ]
+    )
+    router = HybridRouter(Settings(tool_max_rounds=2), ollama, memory)
+
+    prepared = router.prepare_turn("Keep checking my tea memories.")
+
+    assert ollama.calls == 2
+    assert prepared.invocation_path == "model_tool_call"
+    assert "Stopped backend tool execution after 2 round(s)." in prepared.invocation_summary
+    assert prepared.tool_traces[-1].stage == "limit_reached"
+    assert len([trace for trace in prepared.tool_traces if trace.stage == "succeeded"]) == 2
+
+
+def test_handle_transcript_hands_tool_results_into_final_generation() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_memory",
+                            "arguments": {"query": "tea preference", "limit": 1},
+                        },
+                    },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "save_to_memory",
+                            "arguments": {"fact": "My favorite tea is jasmine."},
+                        },
+                    },
+                ],
+            },
+            {"role": "assistant", "content": "I found your tea preference and refreshed it."},
+        ]
+    )
+    router = HybridRouter(Settings(), ollama, memory)
+
+    result = router.handle_transcript("Check my tea memory and save the latest phrasing.")
+
+    assert result.reply_text == "I found your tea preference and refreshed it."
+    tool_messages = [message for message in ollama.seen_messages[-1] if message["role"] == "tool"]
+    assert [message["tool_name"] for message in tool_messages] == ["search_memory", "save_to_memory"]
+    first_tool_payload = json.loads(tool_messages[0]["content"])
+    second_tool_payload = json.loads(tool_messages[1]["content"])
+    assert first_tool_payload["result"]["hit_count"] == 1
+    assert second_tool_payload["result"]["action"] == "inserted"
+
+
+def test_prepare_turn_allows_partial_tool_failure_without_dropping_other_results() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "delete_memory",
+                            "arguments": {"query": "tea"},
+                        },
+                    },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_memory",
+                            "arguments": {"query": "tea preference", "limit": 1},
+                        },
+                    },
+                ],
+            },
+            {"role": "assistant", "content": "I searched memory and skipped the unsupported delete."},
+        ]
+    )
+    router = HybridRouter(Settings(), ollama, memory)
+
+    prepared = router.prepare_turn("Delete anything stale, then inspect my tea memories.")
+
+    assert prepared.invocation_path == "model_tool_call"
+    assert "partially succeeded" in prepared.invocation_summary
+    tool_payloads = [
+        json.loads(message["content"]) for message in prepared.final_messages if message["role"] == "tool"
+    ]
+    assert tool_payloads[0]["ok"] is False
+    assert tool_payloads[0]["error"]["code"] == "unsupported_tool"
+    assert tool_payloads[1]["ok"] is True
+    assert tool_payloads[1]["tool_name"] == "search_memory"
+
+
 def test_prepare_turn_returns_structured_error_for_unsupported_tool() -> None:
     memory = FakeMemoryManager()
     ollama = FakeOllamaClient(
-        {
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "delete_memory",
-                        "arguments": {},
-                    },
-                }
-            ],
-        }
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "delete_memory",
+                            "arguments": {},
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "I cannot delete memories from the current tool surface."},
+        ]
     )
     router = HybridRouter(Settings(), ollama, memory)
 
@@ -238,18 +459,21 @@ def test_prepare_turn_returns_structured_error_for_unsupported_tool() -> None:
 def test_prepare_turn_returns_structured_error_for_malformed_tool_arguments() -> None:
     memory = FakeMemoryManager()
     ollama = FakeOllamaClient(
-        {
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "save_to_memory",
-                        "arguments": {"fact": "tea", "extra": "nope"},
-                    },
-                }
-            ],
-        }
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "save_to_memory",
+                            "arguments": {"fact": "tea", "extra": "nope"},
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "I could not save that because the tool call was malformed."},
+        ]
     )
     router = HybridRouter(Settings(), ollama, memory)
 
@@ -268,18 +492,21 @@ def test_prepare_turn_returns_structured_error_for_malformed_tool_arguments() ->
 def test_prepare_turn_returns_structured_error_when_tool_execution_fails() -> None:
     memory = FakeMemoryManager(should_fail=True)
     ollama = FakeOllamaClient(
-        {
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "save_to_memory",
-                        "arguments": {"fact": "My dentist appointment is on Friday at 2 PM."},
-                    },
-                }
-            ],
-        }
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "save_to_memory",
+                            "arguments": {"fact": "My dentist appointment is on Friday at 2 PM."},
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "I could not save that safely right now."},
+        ]
     )
     router = HybridRouter(Settings(), ollama, memory)
 
@@ -316,3 +543,31 @@ def test_normalize_tool_calls_filters_malformed_entries() -> None:
             },
         }
     ]
+
+
+def test_prepare_turn_rejects_boolean_search_limit() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_memory",
+                            "arguments": {"query": "tea", "limit": True},
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "I could not inspect memory with that invalid limit."},
+        ]
+    )
+    router = HybridRouter(Settings(), ollama, memory)
+
+    prepared = router.prepare_turn("Search my tea memories.")
+
+    tool_payload = json.loads(prepared.final_messages[-1]["content"])
+    assert tool_payload["ok"] is False
+    assert tool_payload["error"]["code"] == "invalid_argument_type"
