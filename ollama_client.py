@@ -118,7 +118,26 @@ class OllamaClient:
         tool_calls = message.get("tool_calls") or []
         if not isinstance(tool_calls, list):
             return []
-        return tool_calls
+        normalized: list[dict[str, Any]] = []
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict):
+                continue
+            function_payload = tool_call.get("function")
+            if not isinstance(function_payload, dict):
+                continue
+            tool_name = function_payload.get("name")
+            if not isinstance(tool_name, str) or not tool_name.strip():
+                continue
+            normalized.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool_name.strip(),
+                        "arguments": function_payload.get("arguments"),
+                    },
+                }
+            )
+        return normalized
 
     def classify_memory_tags(self, fact: str) -> list[str]:
         response = self.chat(
