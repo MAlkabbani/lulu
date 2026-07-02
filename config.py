@@ -129,6 +129,13 @@ class Settings:
         )
 
 
+def build_wake_guidance(settings: Settings) -> str:
+    guidance = f"Say '{settings.wake_phrase}', pause briefly, then speak your request."
+    if settings.practical_voice_mode:
+        return guidance + " Practical voice mode is on for a more forgiving wake scan."
+    return guidance
+
+
 DEFAULT_SYSTEM_PROMPT = """You are Lulu, a fully local Apple Silicon voice assistant.
 
 Rules:

@@ -54,10 +54,6 @@ def format_hit(hit: MemoryHit, index: int, show_metadata: bool) -> str:
     return "\n".join(lines)
 
 
-def list_memories(manager: MemoryManager, limit: int) -> list[MemoryHit]:
-    return manager.list_recent_memories(limit)
-
-
 def main() -> None:
     args = parse_args()
     settings = Settings()
@@ -68,7 +64,7 @@ def main() -> None:
         hits = manager.query_memory(args.query, k=args.limit)
         heading = f"Semantic matches for: {args.query}"
     else:
-        hits = list_memories(manager, args.limit)
+        hits = manager.list_recent_memories(args.limit)
         heading = f"Latest canonical memories (limit={args.limit})"
 
     print(heading)

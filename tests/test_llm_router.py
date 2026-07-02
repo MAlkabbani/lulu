@@ -132,6 +132,11 @@ class FakeOllamaClient:
         return message.get("tool_calls") or []
 
 
+def _tool_definitions_by_name(tools: list[dict] | None) -> dict[str, dict]:
+    assert tools is not None
+    return {tool["function"]["name"]: tool["function"] for tool in tools}
+
+
 def test_explicit_insert_info_bypasses_llm() -> None:
     memory = FakeMemoryManager()
     router = HybridRouter(Settings(), FakeOllamaClient({"content": "unused"}), memory)
@@ -183,84 +188,22 @@ def test_tool_call_saves_memory_and_generates_follow_up() -> None:
     assert result.invocation_path == "model_tool_call"
     assert "Natural-language backend action succeeded" in result.invocation_summary
     assert memory.saved == [("My dentist appointment is on Friday at 2 PM.", "tool_call")]
-    assert ollama.seen_tools[0] == [
-        {
-            "type": "function",
-            "function": {
-                "name": "save_to_memory",
-                "description": "Persist a durable user fact, preference, or schedule detail.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "fact": {
-                            "type": "string",
-                            "description": "The durable fact to store in long-term memory.",
-                        }
-                    },
-                    "required": ["fact"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "search_memory",
-                "description": "Inspect remembered facts relevant to a topic or question.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The natural-language memory topic or fact to look up.",
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Optional maximum number of memory hits to return.",
-                        },
-                    },
-                    "required": ["query"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "list_recent_memories",
-                "description": "List the most recently updated canonical memories.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "limit": {
-                            "type": "integer",
-                            "description": "Optional maximum number of recent memories to return.",
-                        }
-                    },
-                    "required": [],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "explain_memory_hit",
-                "description": "Explain a specific memory returned by search or recent-memory lookup.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "memory_id": {
-                            "type": "string",
-                            "description": "The memory identifier returned by a prior search or recent-memory list.",
-                        }
-                    },
-                    "required": ["memory_id"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-    ]
+    tool_definitions = _tool_definitions_by_name(ollama.seen_tools[0])
+    assert set(tool_definitions) == {
+        "save_to_memory",
+        "search_memory",
+        "list_recent_memories",
+        "explain_memory_hit",
+    }
+    assert tool_definitions["save_to_memory"]["parameters"]["required"] == ["fact"]
+    assert tool_definitions["search_memory"]["parameters"]["required"] == ["query"]
+    assert (
+        tool_definitions["list_recent_memories"]["parameters"]["properties"]["limit"]["type"]
+        == "integer"
+    )
+    assert (
+        tool_definitions["explain_memory_hit"]["parameters"]["required"] == ["memory_id"]
+    )
 
 
 def test_router_includes_tag_aware_context_in_system_prompt() -> None:

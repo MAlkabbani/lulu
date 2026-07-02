@@ -14,7 +14,7 @@ from audio_handler import (
     TTSPlaybackError,
     text_similarity,
 )
-from config import Settings
+from config import Settings, build_wake_guidance
 from llm_router import HybridRouter
 from memory_manager import MemoryManager
 from ollama_client import OllamaClient, OllamaClientError
@@ -85,7 +85,8 @@ def main() -> None:
         else:
             _run_turn_based_voice_loop(settings, audio_handler, router, ollama_client, tts, ui)
     except KeyboardInterrupt:
-        print("\nGoodbye.")
+        ui.log_event("Shutdown requested by operator.")
+        ui.set_mode("idle", f"{settings.app_name} stopped.")
     except Exception as exc:
         _handle_dependency_failure(
             ui,
@@ -175,7 +176,7 @@ def _run_continuous_voice_loop(
     cooldown_until = 0.0
     last_assistant_reply = ""
     last_assistant_reply_at = 0.0
-    ui.set_wake_guidance(_default_wake_guidance(settings))
+    ui.set_wake_guidance(build_wake_guidance(settings))
     ui.log_event(f"Passive listening enabled. Waiting for '{settings.wake_phrase}'.")
 
     while True:
@@ -242,7 +243,7 @@ def _run_continuous_voice_loop(
 
         ui.set_conversation_window_remaining(None)
         ui.set_mode("passive_listening", f"Waiting for '{settings.wake_phrase}'...")
-        ui.set_wake_guidance(_default_wake_guidance(settings))
+        ui.set_wake_guidance(build_wake_guidance(settings))
         audio, capture_failed = _capture_audio(audio_handler.record_wake_scan, ui)
         if capture_failed:
             sleep(0.2)
@@ -342,13 +343,6 @@ def _run_continuous_voice_loop(
             )
 
 
-def _default_wake_guidance(settings: Settings) -> str:
-    guidance = f"Say '{settings.wake_phrase}', pause briefly, then speak your request."
-    if settings.practical_voice_mode:
-        return guidance + " Practical voice mode is on for a more forgiving wake scan."
-    return guidance
-
-
 def _wake_rejection_response(reason: str, score: float, settings: Settings) -> str:
     phrase = settings.wake_phrase
     if reason == "too-short":
@@ -373,7 +367,7 @@ def _wake_rejection_guidance(reason: str, settings: Settings) -> str:
         )
     if reason == "self-audio-guard":
         return "Wait until Lulu finishes speaking, then try the wake phrase again."
-    return _default_wake_guidance(settings)
+    return build_wake_guidance(settings)
 
 
 def _transcribe_audio(
@@ -486,8 +480,6 @@ def _process_transcript_turn(
         ui.add_saved_items(prepared.saved_items)
     if prepared.invocation_path == "explicit_save":
         ui.record_explicit_save("updated" in prepared.fixed_reply.lower())
-
-    if prepared.invocation_path == "explicit_save":
         ui.set_mode("thinking", "Deterministic memory save accepted. Preparing spoken confirmation...")
     elif prepared.tool_traces:
         final_tool_stage = prepared.tool_traces[-1].stage

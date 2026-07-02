@@ -14,7 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from config import Settings
+from config import Settings, build_wake_guidance
 
 @dataclass
 class UIState:
@@ -81,10 +81,6 @@ class TerminalUI:
         with self._state_lock:
             self.live.stop()
 
-    def refresh(self) -> None:
-        with self._state_lock:
-            self._refresh_locked()
-
     def _refresh_locked(self) -> None:
         self.live.update(self._render())
 
@@ -93,7 +89,7 @@ class TerminalUI:
             self.state.ollama_version = version
             self.state.text_input_mode = text_input_mode
             self.state.wake_score_threshold = self.settings.wake_match_score_threshold
-            self.state.wake_guidance = self._default_wake_guidance()
+            self.state.wake_guidance = build_wake_guidance(self.settings)
             self.state.status_line = f"{self.settings.app_name} is ready. Press Ctrl+C to stop."
             self.state.mode = "ready"
             self.log_event(f"Connected to Ollama {version}", refresh=False)
@@ -701,12 +697,6 @@ class TerminalUI:
             for reason, count in self.state.wake_rejection_reasons.most_common(3)
         )
         return Text(summary, style="yellow", overflow="fold")
-
-    def _default_wake_guidance(self) -> str:
-        guidance = f"Say '{self.settings.wake_phrase}', pause briefly, then speak your request."
-        if self.settings.practical_voice_mode:
-            return guidance + " Practical voice mode is on for a more forgiving wake scan."
-        return guidance
 
     @staticmethod
     def _latency_text(milliseconds: float) -> Text:
