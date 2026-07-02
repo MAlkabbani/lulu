@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from config import Settings
-from llm_router import PreparedTurn
+from llm_router import PreparedTurn, ToolTrace
 from main import _process_transcript_turn
 from ollama_client import OllamaClientError
 from audio_handler import TTSPlaybackError
@@ -156,3 +156,85 @@ def test_terminal_ui_records_first_spoken_latency_on_first_chunk() -> None:
 
     assert "first_spoken" in ui.state.latencies_ms
     assert ui.state.spoken_chunk_count == 1
+
+
+def test_process_transcript_turn_surfaces_tool_success_in_ui() -> None:
+    ui = TerminalUI(Settings())
+    router = FixedReplyRouter(
+        PreparedTurn(
+            fixed_reply="Saved. I will remember that.",
+            memory_hits=[],
+            saved_items=["My dentist appointment is on Friday at 2 PM."],
+            invocation_path="model_tool_call",
+            invocation_summary=(
+                "Natural-language backend action succeeded: "
+                "Saved memory via save_to_memory: My dentist appointment is on Friday at 2 PM."
+            ),
+            tool_traces=[
+                ToolTrace(
+                    tool_name="save_to_memory",
+                    stage="selected",
+                    detail="Selected backend action save_to_memory.",
+                ),
+                ToolTrace(
+                    tool_name="save_to_memory",
+                    stage="running",
+                    detail="Running backend action save_to_memory.",
+                ),
+                ToolTrace(
+                    tool_name="save_to_memory",
+                    stage="succeeded",
+                    detail=(
+                        "Saved memory via save_to_memory: "
+                        "My dentist appointment is on Friday at 2 PM."
+                    ),
+                ),
+            ],
+        )
+    )
+
+    _process_transcript_turn(
+        transcript="Please remember my dentist appointment is on Friday at 2 PM.",
+        settings=Settings(tts_stream_min_chunk_chars=8, tts_stream_soft_chunk_chars=24),
+        router=router,
+        ollama_client=StreamingOllamaClient([]),
+        tts=FakeTTS(),
+        ui=ui,
+    )
+
+    assert ui.state.invocation_path == "model_tool_call"
+    assert ui.state.current_tool_status == "save_to_memory succeeded"
+    assert "Saved memory via save_to_memory" in ui.state.last_tool_result
+    assert ui.state.recent_saves[0] == "My dentist appointment is on Friday at 2 PM."
+    assert any(event.startswith("Tool selected: save_to_memory") for event in ui.state.recent_events)
+    assert any(event.startswith("Tool running: save_to_memory") for event in ui.state.recent_events)
+    assert any(event.startswith("Tool succeeded:") for event in ui.state.recent_events)
+
+
+def test_process_transcript_turn_surfaces_chat_only_invocation_in_ui() -> None:
+    ui = TerminalUI(Settings())
+    router = FixedReplyRouter(
+        PreparedTurn(
+            fixed_reply="You like jasmine tea.",
+            memory_hits=[],
+            saved_items=[],
+            invocation_path="chat_only",
+            invocation_summary="Normal chat reply; no backend action requested.",
+        )
+    )
+
+    _process_transcript_turn(
+        transcript="What tea do I like?",
+        settings=Settings(tts_stream_min_chunk_chars=8, tts_stream_soft_chunk_chars=24),
+        router=router,
+        ollama_client=StreamingOllamaClient([]),
+        tts=FakeTTS(),
+        ui=ui,
+    )
+
+    assert ui.state.invocation_path == "chat_only"
+    assert ui.state.current_tool_status == "No backend tool used."
+    assert any(
+        event == "Normal chat reply; no backend action requested."
+        for event in ui.state.recent_events
+    )

@@ -23,6 +23,10 @@ class UIState:
     last_error: str = ""
     transcript: str = ""
     response: str = ""
+    invocation_path: str = "chat-only"
+    invocation_summary: str = "No invocation path yet."
+    current_tool_status: str = "No backend tool used."
+    last_tool_result: str = ""
     memory_hit_count: int = 0
     emitted_chunk_count: int = 0
     spoken_chunk_count: int = 0
@@ -129,6 +133,34 @@ class TerminalUI:
     def set_response(self, response: str) -> None:
         with self._state_lock:
             self.state.response = response
+            self._refresh_locked()
+
+    def set_invocation(self, path: str, summary: str) -> None:
+        with self._state_lock:
+            self.state.invocation_path = path
+            self.state.invocation_summary = summary
+            self._refresh_locked()
+
+    def record_tool_activity(self, tool_name: str, stage: str, detail: str) -> None:
+        with self._state_lock:
+            if stage == "selected":
+                self.state.current_tool_status = f"{tool_name} selected"
+                event = f"Tool selected: {tool_name}"
+            elif stage == "running":
+                self.state.current_tool_status = f"{tool_name} running"
+                event = f"Tool running: {tool_name}"
+            elif stage == "succeeded":
+                self.state.current_tool_status = f"{tool_name} succeeded"
+                self.state.last_tool_result = detail
+                event = f"Tool succeeded: {detail}"
+            elif stage == "failed":
+                self.state.current_tool_status = f"{tool_name} failed"
+                self.state.last_tool_result = detail
+                event = f"Tool failed: {detail}"
+            else:
+                self.state.current_tool_status = f"{tool_name} {stage}"
+                event = f"Tool update: {tool_name} {stage}"
+            self.log_event(event, refresh=False)
             self._refresh_locked()
 
     def set_memory_hits(self, count: int) -> None:
@@ -247,6 +279,10 @@ class TerminalUI:
             self.state.latencies_ms = {}
             self.state.transcript = ""
             self.state.response = ""
+            self.state.invocation_path = "chat-only"
+            self.state.invocation_summary = "Awaiting invocation decision."
+            self.state.current_tool_status = "No backend tool used."
+            self.state.last_tool_result = ""
             self._refresh_locked()
 
     def prompt_text(self) -> str:
@@ -342,7 +378,15 @@ class TerminalUI:
                 style="bold green" if self.settings.practical_voice_mode else "bright_blue",
             ),
         )
-        table.add_row("Recall hits", Text(str(self.state.memory_hit_count), style="green"))
+        table.add_row("Path", self._invocation_badge())
+        table.add_row(
+            "Tool",
+            self._tool_status_text(),
+        )
+        table.add_row(
+            "Tool result",
+            Text(self.state.last_tool_result or "n/a", style="white", overflow="fold"),
+        )
         table.add_row(
             "Chunks",
             Text(
@@ -509,6 +553,27 @@ class TerminalUI:
 
     def _mode_badge(self) -> Text:
         return Text(self.state.mode.upper(), style=self._mode_style())
+
+    def _invocation_badge(self) -> Text:
+        labels = {
+            "explicit_save": ("EXPLICIT SAVE", "bold yellow"),
+            "model_tool_call": ("NATURAL TOOL", "bold green"),
+            "chat_only": ("CHAT ONLY", "bold cyan"),
+        }
+        label, style = labels.get(self.state.invocation_path, (self.state.invocation_path, "bold white"))
+        return Text(label, style=style)
+
+    def _tool_status_text(self) -> Text:
+        status = self.state.current_tool_status
+        if "failed" in status:
+            style = "bold red"
+        elif "succeeded" in status:
+            style = "bold green"
+        elif "running" in status or "selected" in status:
+            style = "bold yellow"
+        else:
+            style = "dim"
+        return Text(status, style=style, overflow="fold")
 
     def _mode_style(self) -> str:
         if "error" in self.state.mode:

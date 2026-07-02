@@ -35,6 +35,7 @@ class ToolCallError(ValueError):
 @dataclass(frozen=True)
 class ToolInvocationResult:
     result: dict[str, Any]
+    display_summary: str
     saved_item: str | None = None
 
 
@@ -61,7 +62,16 @@ class ToolDefinition:
 class ToolCallOutcome:
     tool_name: str
     content: str
+    ok: bool
+    summary: str
     saved_item: str | None = None
+
+
+@dataclass(frozen=True)
+class ToolTrace:
+    tool_name: str
+    stage: str
+    detail: str
 
 
 class ToolRegistry:
@@ -123,6 +133,8 @@ class ToolRegistry:
                 },
                 ensure_ascii=True,
             ),
+            ok=True,
+            summary=invocation.display_summary,
             saved_item=invocation.saved_item,
         )
 
@@ -141,6 +153,8 @@ class ToolRegistry:
                 },
                 ensure_ascii=True,
             ),
+            ok=False,
+            summary=message,
         )
 
     @staticmethod
@@ -219,6 +233,9 @@ class RouteResult:
     reply_text: str
     memory_hits: list[MemoryHit]
     saved_items: list[str]
+    invocation_path: str = "chat_only"
+    invocation_summary: str = "Normal chat reply; no backend action requested."
+    tool_traces: list[ToolTrace] = field(default_factory=list)
     bypassed_llm: bool = False
 
 
@@ -228,6 +245,9 @@ class PreparedTurn:
     final_messages: list[dict[str, Any]] = field(default_factory=list)
     memory_hits: list[MemoryHit] = field(default_factory=list)
     saved_items: list[str] = field(default_factory=list)
+    invocation_path: str = "chat_only"
+    invocation_summary: str = "Normal chat reply; no backend action requested."
+    tool_traces: list[ToolTrace] = field(default_factory=list)
     bypassed_llm: bool = False
 
 
@@ -260,6 +280,9 @@ class HybridRouter:
                 reply_text=prepared.fixed_reply,
                 memory_hits=prepared.memory_hits,
                 saved_items=prepared.saved_items,
+                invocation_path=prepared.invocation_path,
+                invocation_summary=prepared.invocation_summary,
+                tool_traces=prepared.tool_traces,
                 bypassed_llm=prepared.bypassed_llm,
             )
 
@@ -269,6 +292,9 @@ class HybridRouter:
             reply_text=final_text,
             memory_hits=prepared.memory_hits,
             saved_items=prepared.saved_items,
+            invocation_path=prepared.invocation_path,
+            invocation_summary=prepared.invocation_summary,
+            tool_traces=prepared.tool_traces,
             bypassed_llm=prepared.bypassed_llm,
         )
 
@@ -279,6 +305,7 @@ class HybridRouter:
                 fixed_reply="",
                 memory_hits=[],
                 saved_items=[],
+                invocation_summary="Empty input; no backend action requested.",
                 bypassed_llm=True,
             )
 
@@ -290,6 +317,8 @@ class HybridRouter:
                     fixed_reply="Please say what you want me to save after insert info.",
                     memory_hits=[],
                     saved_items=[],
+                    invocation_path="explicit_save",
+                    invocation_summary="Deterministic save command needs a fact after insert info.",
                     bypassed_llm=True,
                 )
 
@@ -301,6 +330,8 @@ class HybridRouter:
                 fixed_reply=reply_text,
                 memory_hits=[],
                 saved_items=[payload],
+                invocation_path="explicit_save",
+                invocation_summary="Deterministic memory save via insert info.",
                 bypassed_llm=True,
             )
 
@@ -319,17 +350,22 @@ class HybridRouter:
                 final_messages=messages,
                 memory_hits=memory_hits,
                 saved_items=[],
+                invocation_path="chat_only",
+                invocation_summary="Normal chat reply; no backend action requested.",
             )
 
         selected_tool_calls = tool_calls[:1]
         assistant_tool_message = {"role": "assistant", "tool_calls": selected_tool_calls}
-        tool_messages, saved_items = self._execute_tool_calls(selected_tool_calls)
+        tool_messages, saved_items, tool_traces = self._execute_tool_calls(selected_tool_calls)
         final_messages = messages + [assistant_tool_message] + tool_messages
         return PreparedTurn(
             fixed_reply="",
             final_messages=final_messages,
             memory_hits=memory_hits,
             saved_items=saved_items,
+            invocation_path="model_tool_call",
+            invocation_summary=self._summarize_tool_invocation(tool_traces),
+            tool_traces=tool_traces,
         )
 
     def _build_messages(
@@ -347,11 +383,27 @@ class HybridRouter:
 
     def _execute_tool_calls(
         self, tool_calls: list[dict[str, Any]]
-    ) -> tuple[list[dict[str, str]], list[str]]:
+    ) -> tuple[list[dict[str, str]], list[str], list[ToolTrace]]:
         tool_messages: list[dict[str, str]] = []
         saved_items: list[str] = []
+        tool_traces: list[ToolTrace] = []
 
         for tool_call in tool_calls:
+            tool_name = self._tool_name_for_trace(tool_call)
+            tool_traces.append(
+                ToolTrace(
+                    tool_name=tool_name,
+                    stage="selected",
+                    detail=f"Selected backend action {tool_name}.",
+                )
+            )
+            tool_traces.append(
+                ToolTrace(
+                    tool_name=tool_name,
+                    stage="running",
+                    detail=f"Running backend action {tool_name}.",
+                )
+            )
             outcome = self.tool_registry.execute(tool_call)
             tool_messages.append(
                 {
@@ -362,8 +414,15 @@ class HybridRouter:
             )
             if outcome.saved_item:
                 saved_items.append(outcome.saved_item)
+            tool_traces.append(
+                ToolTrace(
+                    tool_name=outcome.tool_name,
+                    stage="succeeded" if outcome.ok else "failed",
+                    detail=outcome.summary,
+                )
+            )
 
-        return tool_messages, saved_items
+        return tool_messages, saved_items, tool_traces
 
     def _validate_save_to_memory_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
         return {"fact": self._validate_fact(arguments.get("fact"))}
@@ -371,8 +430,10 @@ class HybridRouter:
     def _execute_save_to_memory(self, arguments: dict[str, Any]) -> ToolInvocationResult:
         fact = arguments["fact"]
         save_result = self.memory_manager.upsert_memory(fact, source="tool_call")
+        action_text = "Saved memory" if save_result.action == "inserted" else "Updated memory"
         return ToolInvocationResult(
             result=json.loads(save_result.to_tool_message()),
+            display_summary=f"{action_text} via save_to_memory: {fact}",
             saved_item=fact,
         )
 
@@ -389,3 +450,25 @@ class HybridRouter:
                 "Argument fact is too long to store safely.",
             )
         return clean_fact
+
+    @staticmethod
+    def _tool_name_for_trace(tool_call: dict[str, Any]) -> str:
+        function_payload = tool_call.get("function")
+        if not isinstance(function_payload, dict):
+            return "unknown_tool"
+        tool_name = function_payload.get("name")
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return "unknown_tool"
+        return tool_name.strip()
+
+    @staticmethod
+    def _summarize_tool_invocation(tool_traces: list[ToolTrace]) -> str:
+        final_trace = next(
+            (trace for trace in reversed(tool_traces) if trace.stage in {"succeeded", "failed"}),
+            None,
+        )
+        if final_trace is None:
+            return "Natural-language backend action requested."
+        if final_trace.stage == "succeeded":
+            return f"Natural-language backend action succeeded: {final_trace.detail}"
+        return f"Natural-language backend action was rejected safely: {final_trace.detail}"

@@ -71,6 +71,8 @@ def test_explicit_insert_info_bypasses_llm() -> None:
 
     assert result.bypassed_llm is True
     assert result.saved_items == ["my favorite tea is jasmine"]
+    assert result.invocation_path == "explicit_save"
+    assert result.invocation_summary == "Deterministic memory save via insert info."
     assert memory.saved == [("my favorite tea is jasmine", "explicit")]
 
 
@@ -109,6 +111,8 @@ def test_tool_call_saves_memory_and_generates_follow_up() -> None:
 
     assert result.saved_items == ["My dentist appointment is on Friday at 2 PM."]
     assert result.reply_text == "Saved. I will remember that."
+    assert result.invocation_path == "model_tool_call"
+    assert "Natural-language backend action succeeded" in result.invocation_summary
     assert memory.saved == [("My dentist appointment is on Friday at 2 PM.", "tool_call")]
     assert ollama.seen_tools[0] == [
         {
@@ -158,6 +162,8 @@ def test_prepare_turn_returns_streamable_messages_for_non_tool_reply() -> None:
     assert isinstance(prepared, PreparedTurn)
     assert prepared.fixed_reply == ""
     assert prepared.saved_items == []
+    assert prepared.invocation_path == "chat_only"
+    assert prepared.invocation_summary == "Normal chat reply; no backend action requested."
     assert len(prepared.final_messages) == 2
     assert prepared.final_messages[1]["content"] == "What tea do I like?"
 
@@ -187,6 +193,9 @@ def test_prepare_turn_streams_only_post_tool_final_messages() -> None:
     assert prepared.fixed_reply == ""
     assert prepared.saved_items == ["My dentist appointment is on Friday at 2 PM."]
     assert memory.saved == [("My dentist appointment is on Friday at 2 PM.", "tool_call")]
+    assert prepared.invocation_path == "model_tool_call"
+    assert "Natural-language backend action succeeded" in prepared.invocation_summary
+    assert [trace.stage for trace in prepared.tool_traces] == ["selected", "running", "succeeded"]
     assert prepared.final_messages[-1]["role"] == "tool"
     tool_payload = json.loads(prepared.final_messages[-1]["content"])
     assert tool_payload["ok"] is True
@@ -217,6 +226,9 @@ def test_prepare_turn_returns_structured_error_for_unsupported_tool() -> None:
 
     assert prepared.saved_items == []
     assert memory.saved == []
+    assert prepared.invocation_path == "model_tool_call"
+    assert "rejected safely" in prepared.invocation_summary
+    assert [trace.stage for trace in prepared.tool_traces] == ["selected", "running", "failed"]
     tool_payload = json.loads(prepared.final_messages[-1]["content"])
     assert tool_payload["ok"] is False
     assert tool_payload["tool_name"] == "delete_memory"
@@ -245,6 +257,8 @@ def test_prepare_turn_returns_structured_error_for_malformed_tool_arguments() ->
 
     assert prepared.saved_items == []
     assert memory.saved == []
+    assert prepared.invocation_path == "model_tool_call"
+    assert "rejected safely" in prepared.invocation_summary
     tool_payload = json.loads(prepared.final_messages[-1]["content"])
     assert tool_payload["ok"] is False
     assert tool_payload["tool_name"] == "save_to_memory"
@@ -273,6 +287,8 @@ def test_prepare_turn_returns_structured_error_when_tool_execution_fails() -> No
 
     assert prepared.saved_items == []
     assert memory.saved == []
+    assert prepared.invocation_path == "model_tool_call"
+    assert "rejected safely" in prepared.invocation_summary
     tool_payload = json.loads(prepared.final_messages[-1]["content"])
     assert tool_payload["ok"] is False
     assert tool_payload["tool_name"] == "save_to_memory"

@@ -99,6 +99,12 @@ Lulu uses a hybrid router with two main behavior paths:
 - An explicit command path for deterministic memory writes
 - A conversational path that recalls memory, lets the model optionally request a memory-save tool, and then produces a final spoken reply
 
+For user-facing operation, the current baseline distinguishes three invocation outcomes:
+
+- deterministic explicit-save commands such as `insert info ...`
+- natural-language turns that may trigger the validated `save_to_memory` tool
+- normal chat turns that produce a reply without any backend action
+
 The product supports three runtime modes:
 
 - `CONTINUOUS`: passive wake listening, active follow-up window, cooldown, and self-audio suppression
@@ -314,7 +320,7 @@ The product shall reduce assistant self-triggering by combining a cooldown perio
 
 ### FR-13 Operator Observability
 
-The terminal dashboard shall expose runtime mode, state transitions, recent transcript and response, memory events, latency snapshots, wake attempt diagnostics, and event logs.
+The terminal dashboard shall expose runtime mode, state transitions, recent transcript and response, memory events, invocation path, tool-state summaries, latency snapshots, wake attempt diagnostics, and event logs.
 
 ### FR-14 Manual Memory Inspection
 
