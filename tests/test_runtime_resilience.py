@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from config import Settings
 from llm_router import PreparedTurn, ToolTrace
+import main as app_main
 from main import _process_transcript_turn
 from ollama_client import OllamaClientError
 from audio_handler import TTSPlaybackError
@@ -51,6 +54,63 @@ class FakeTTS:
         return list(self.turn_errors)
 
 
+class BootstrapTestOllamaClient:
+    def __init__(self, settings: Settings) -> None:  # noqa: ARG002
+        pass
+
+
+class BootstrapTestMemoryManager:
+    def __init__(self, settings: Settings, ollama_client: BootstrapTestOllamaClient) -> None:  # noqa: ARG002
+        pass
+
+
+class BootstrapTestRouter:
+    def __init__(
+        self,
+        settings: Settings,
+        ollama_client: BootstrapTestOllamaClient,
+        memory_manager: BootstrapTestMemoryManager,
+    ) -> None:  # noqa: ARG002
+        pass
+
+
+class BootstrapTestAudioHandler:
+    def __init__(self, settings: Settings) -> None:  # noqa: ARG002
+        pass
+
+
+class BootstrapTestTTS:
+    instances: list["BootstrapTestTTS"] = []
+
+    def __init__(self) -> None:
+        self.closed = False
+        BootstrapTestTTS.instances.append(self)
+
+    def set_on_chunk_spoken(self, callback) -> None:  # noqa: ANN001, ARG002
+        return None
+
+    def set_on_chunk_error(self, callback) -> None:  # noqa: ANN001, ARG002
+        return None
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class BootstrapTestUI:
+    instances: list["BootstrapTestUI"] = []
+
+    def __init__(self, settings: Settings) -> None:  # noqa: ARG002
+        self.started = False
+        self.stopped = False
+        BootstrapTestUI.instances.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
 def test_process_transcript_turn_reports_router_failure() -> None:
     ui = TerminalUI(Settings())
 
@@ -65,6 +125,32 @@ def test_process_transcript_turn_reports_router_failure() -> None:
 
     assert ui.state.mode == "router_error"
     assert "memory backend unavailable" in ui.state.status_line
+
+
+def test_main_cleans_up_ui_and_tts_when_bootstrap_fails(monkeypatch) -> None:
+    BootstrapTestTTS.instances.clear()
+    BootstrapTestUI.instances.clear()
+
+    monkeypatch.setattr(
+        app_main,
+        "parse_args",
+        lambda: SimpleNamespace(text_input=False, turn_based=False),
+    )
+    monkeypatch.setattr(app_main, "OllamaClient", BootstrapTestOllamaClient)
+    monkeypatch.setattr(app_main, "MemoryManager", BootstrapTestMemoryManager)
+    monkeypatch.setattr(app_main, "HybridRouter", BootstrapTestRouter)
+    monkeypatch.setattr(app_main, "AudioHandler", BootstrapTestAudioHandler)
+    monkeypatch.setattr(app_main, "MacOSTTS", BootstrapTestTTS)
+    monkeypatch.setattr(app_main, "TerminalUI", BootstrapTestUI)
+    monkeypatch.setattr(app_main, "_bootstrap_connection", lambda *args, **kwargs: False)
+
+    app_main.main()
+
+    ui = BootstrapTestUI.instances[-1]
+    tts = BootstrapTestTTS.instances[-1]
+    assert ui.started is True
+    assert ui.stopped is True
+    assert tts.closed is True
 
 
 def test_process_transcript_turn_preserves_partial_text_on_stream_failure() -> None:

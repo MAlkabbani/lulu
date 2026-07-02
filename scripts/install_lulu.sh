@@ -37,6 +37,59 @@ die() {
   exit 1
 }
 
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+strip_matching_quotes() {
+  local value="$1"
+  if [[ ${#value} -lt 2 ]]; then
+    printf '%s' "${value}"
+    return 0
+  fi
+
+  local first_char="${value:0:1}"
+  local last_char="${value: -1}"
+  if [[ ( "${first_char}" == '"' && "${last_char}" == '"' ) || ( "${first_char}" == "'" && "${last_char}" == "'" ) ]]; then
+    printf '%s' "${value:1:${#value}-2}"
+    return 0
+  fi
+
+  printf '%s' "${value}"
+}
+
+load_env_pair() {
+  local raw_line="$1"
+  local line key value
+
+  line="$(trim_whitespace "${raw_line}")"
+  if [[ -z "${line}" || "${line:0:1}" == "#" ]]; then
+    return 0
+  fi
+  if [[ "${line}" != *=* ]]; then
+    die "Invalid environment line in ${ENV_FILE}: ${raw_line}"
+  fi
+
+  key="$(trim_whitespace "${line%%=*}")"
+  value="$(trim_whitespace "${line#*=}")"
+  if [[ ! "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    die "Invalid environment variable name in ${ENV_FILE}: ${key}"
+  fi
+
+  value="$(strip_matching_quotes "${value}")"
+  export "${key}=${value}"
+}
+
+parse_env_file() {
+  local raw_line=""
+  while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
+    load_env_pair "${raw_line}"
+  done < "${ENV_FILE}"
+}
+
 add_rollback() {
   ROLLBACK_TYPES+=("$1")
   ROLLBACK_ARGS+=("${2-}")
@@ -140,10 +193,7 @@ restore_file_if_missing() {
 
 load_env_file() {
   if [[ -f "${ENV_FILE}" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "${ENV_FILE}"
-    set +a
+    parse_env_file
   fi
 
   OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"

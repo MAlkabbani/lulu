@@ -1,136 +1,235 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def _env_raw(name: str) -> str | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    return raw.strip()
+
+
+def _env_str(name: str, default: str) -> str:
+    raw_value = _env_raw(name)
+    if raw_value is None:
+        return default
+    return raw_value
+
+
+def _env_path(name: str, default: str) -> Path:
+    return Path(_env_str(name, default))
+
+
+def _parse_numeric_env(name: str, default: str, parser: type[int] | type[float]) -> int | float:
+    raw_value = _env_raw(name)
+    if raw_value in {None, ""}:
+        raw_value = default
+    try:
+        return parser(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid value for {name}: expected {parser.__name__}, got {raw_value!r}") from exc
+
+
+def _env_int(name: str, default: str) -> int:
+    return int(_parse_numeric_env(name, default, int))
+
+
+def _env_float(name: str, default: str) -> float:
+    return float(_parse_numeric_env(name, default, float))
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw_value = _env_raw(name)
+    if raw_value in {None, ""}:
+        return default
+    normalized = raw_value.lower()
+    if normalized in _TRUE_VALUES:
+        return True
+    if normalized in _FALSE_VALUES:
+        return False
+    valid = ", ".join(sorted(_TRUE_VALUES | _FALSE_VALUES))
+    raise ValueError(f"Invalid value for {name}: expected one of {valid}, got {raw_value!r}")
 
 
 @dataclass(frozen=True)
 class Settings:
-    app_name: str = os.getenv("LULU_APP_NAME", "Lulu")
-    ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    chat_model: str = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:3b")
-    embedding_model: str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-    whisper_model: str = os.getenv(
-        "MLX_WHISPER_MODEL", "mlx-community/whisper-base-mlx"
+    app_name: str = field(default_factory=lambda: _env_str("LULU_APP_NAME", "Lulu"))
+    ollama_base_url: str = field(
+        default_factory=lambda: _env_str("OLLAMA_BASE_URL", "http://localhost:11434")
     )
-    whisper_language: str = os.getenv("MLX_WHISPER_LANGUAGE", "en")
-    chroma_path: Path = Path(os.getenv("CHROMA_PATH", "./vault_db"))
-    chroma_collection: str = os.getenv("CHROMA_COLLECTION", "lulu_memory")
-    audio_input_device: str = os.getenv("AUDIO_INPUT_DEVICE", "").strip()
-    sample_rate: int = int(os.getenv("AUDIO_SAMPLE_RATE", "16000"))
-    channels: int = int(os.getenv("AUDIO_CHANNELS", "1"))
-    vad_threshold: float = float(os.getenv("VAD_THRESHOLD", "0.015"))
-    vad_silence_seconds: float = float(os.getenv("VAD_SILENCE_SECONDS", "1.0"))
-    vad_min_speech_seconds: float = float(os.getenv("VAD_MIN_SPEECH_SECONDS", "0.35"))
-    vad_max_record_seconds: float = float(os.getenv("VAD_MAX_RECORD_SECONDS", "12"))
-    vad_chunk_seconds: float = float(os.getenv("VAD_CHUNK_SECONDS", "0.10"))
-    ollama_timeout_seconds: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
-    top_k_memories: int = int(os.getenv("TOP_K_MEMORIES", "3"))
-    tool_max_rounds: int = int(os.getenv("TOOL_MAX_ROUNDS", "2"))
-    tool_max_calls_per_round: int = int(os.getenv("TOOL_MAX_CALLS_PER_ROUND", "2"))
-    search_memory_default_limit: int = int(os.getenv("SEARCH_MEMORY_DEFAULT_LIMIT", "3"))
-    search_memory_max_limit: int = int(os.getenv("SEARCH_MEMORY_MAX_LIMIT", "5"))
-    max_fact_length: int = int(os.getenv("MAX_FACT_LENGTH", "500"))
-    memory_dedup_similarity_threshold: float = float(
-        os.getenv("MEMORY_DEDUP_SIMILARITY_THRESHOLD", "0.92")
+    chat_model: str = field(default_factory=lambda: _env_str("OLLAMA_CHAT_MODEL", "llama3.2:3b"))
+    embedding_model: str = field(
+        default_factory=lambda: _env_str("OLLAMA_EMBED_MODEL", "nomic-embed-text")
     )
-    memory_dedup_query_k: int = int(os.getenv("MEMORY_DEDUP_QUERY_K", "3"))
-    memory_max_tags: int = int(os.getenv("MEMORY_MAX_TAGS", "3"))
-    memory_tag_classifier_model: str = os.getenv("MEMORY_TAG_CLASSIFIER_MODEL", "")
-    tts_stream_min_chunk_chars: int = int(os.getenv("TTS_STREAM_MIN_CHUNK_CHARS", "36"))
-    tts_stream_start_buffer_chars: int = int(
-        os.getenv("TTS_STREAM_START_BUFFER_CHARS", "110")
+    whisper_model: str = field(
+        default_factory=lambda: _env_str(
+            "MLX_WHISPER_MODEL",
+            "mlx-community/whisper-base-mlx",
+        )
     )
-    tts_stream_group_target_chars: int = int(
-        os.getenv("TTS_STREAM_GROUP_TARGET_CHARS", "150")
+    whisper_language: str = field(default_factory=lambda: _env_str("MLX_WHISPER_LANGUAGE", "en"))
+    chroma_path: Path = field(default_factory=lambda: _env_path("CHROMA_PATH", "./vault_db"))
+    chroma_collection: str = field(
+        default_factory=lambda: _env_str("CHROMA_COLLECTION", "lulu_memory")
     )
-    tts_stream_max_group_sentences: int = int(
-        os.getenv("TTS_STREAM_MAX_GROUP_SENTENCES", "2")
+    audio_input_device: str = field(default_factory=lambda: _env_str("AUDIO_INPUT_DEVICE", ""))
+    sample_rate: int = field(default_factory=lambda: _env_int("AUDIO_SAMPLE_RATE", "16000"))
+    channels: int = field(default_factory=lambda: _env_int("AUDIO_CHANNELS", "1"))
+    vad_threshold: float = field(default_factory=lambda: _env_float("VAD_THRESHOLD", "0.015"))
+    vad_silence_seconds: float = field(
+        default_factory=lambda: _env_float("VAD_SILENCE_SECONDS", "1.0")
     )
-    tts_stream_clause_boundary_chars: int = int(
-        os.getenv("TTS_STREAM_CLAUSE_BOUNDARY_CHARS", "120")
+    vad_min_speech_seconds: float = field(
+        default_factory=lambda: _env_float("VAD_MIN_SPEECH_SECONDS", "0.35")
     )
-    tts_stream_tail_merge_chars: int = int(
-        os.getenv("TTS_STREAM_TAIL_MERGE_CHARS", "40")
+    vad_max_record_seconds: float = field(
+        default_factory=lambda: _env_float("VAD_MAX_RECORD_SECONDS", "12")
     )
-    tts_stream_tail_merge_overflow_chars: int = int(
-        os.getenv("TTS_STREAM_TAIL_MERGE_OVERFLOW_CHARS", "48")
+    vad_chunk_seconds: float = field(default_factory=lambda: _env_float("VAD_CHUNK_SECONDS", "0.10"))
+    ollama_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("OLLAMA_TIMEOUT_SECONDS", "120")
     )
-    tts_stream_soft_chunk_chars: int = int(
-        os.getenv("TTS_STREAM_SOFT_CHUNK_CHARS", "150")
+    top_k_memories: int = field(default_factory=lambda: _env_int("TOP_K_MEMORIES", "3"))
+    tool_max_rounds: int = field(default_factory=lambda: _env_int("TOOL_MAX_ROUNDS", "2"))
+    tool_max_calls_per_round: int = field(
+        default_factory=lambda: _env_int("TOOL_MAX_CALLS_PER_ROUND", "2")
     )
-    tts_stream_max_chunk_chars: int = int(os.getenv("TTS_STREAM_MAX_CHUNK_CHARS", "240"))
-    practical_voice_mode: bool = os.getenv("PRACTICAL_VOICE_MODE", "false").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    wake_phrase: str = os.getenv("WAKE_PHRASE", "hey lulu")
-    wake_scan_max_record_seconds: float = float(
-        os.getenv("WAKE_SCAN_MAX_RECORD_SECONDS", "3.0")
+    search_memory_default_limit: int = field(
+        default_factory=lambda: _env_int("SEARCH_MEMORY_DEFAULT_LIMIT", "3")
     )
-    wake_scan_min_speech_seconds: float = float(
-        os.getenv("WAKE_SCAN_MIN_SPEECH_SECONDS", "0.25")
+    search_memory_max_limit: int = field(
+        default_factory=lambda: _env_int("SEARCH_MEMORY_MAX_LIMIT", "5")
     )
-    wake_scan_silence_seconds: float = float(
-        os.getenv("WAKE_SCAN_SILENCE_SECONDS", "0.45")
+    max_fact_length: int = field(default_factory=lambda: _env_int("MAX_FACT_LENGTH", "500"))
+    memory_dedup_similarity_threshold: float = field(
+        default_factory=lambda: _env_float("MEMORY_DEDUP_SIMILARITY_THRESHOLD", "0.92")
     )
-    wake_scan_pre_roll_chunks: int = int(os.getenv("WAKE_SCAN_PRE_ROLL_CHUNKS", "6"))
-    conversation_window_seconds: float = float(
-        os.getenv("CONVERSATION_WINDOW_SECONDS", "12.0")
+    memory_dedup_query_k: int = field(
+        default_factory=lambda: _env_int("MEMORY_DEDUP_QUERY_K", "3")
     )
-    wake_cooldown_seconds: float = float(os.getenv("WAKE_COOLDOWN_SECONDS", "1.2"))
-    self_audio_guard_seconds: float = float(os.getenv("SELF_AUDIO_GUARD_SECONDS", "8.0"))
-    self_audio_similarity_threshold: float = float(
-        os.getenv("SELF_AUDIO_SIMILARITY_THRESHOLD", "0.74")
+    memory_max_tags: int = field(default_factory=lambda: _env_int("MEMORY_MAX_TAGS", "3"))
+    memory_tag_classifier_model: str = field(
+        default_factory=lambda: _env_str("MEMORY_TAG_CLASSIFIER_MODEL", "")
     )
-    wake_match_score_threshold: float = float(
-        os.getenv("WAKE_MATCH_SCORE_THRESHOLD", "0.84")
+    tts_stream_min_chunk_chars: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_MIN_CHUNK_CHARS", "36")
     )
-    wake_confidence_threshold: float = float(
-        os.getenv("WAKE_CONFIDENCE_THRESHOLD", "0.73")
+    tts_stream_start_buffer_chars: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_START_BUFFER_CHARS", "110")
     )
-    wake_text_score_weight: float = float(os.getenv("WAKE_TEXT_SCORE_WEIGHT", "0.46"))
-    wake_acoustic_score_weight: float = float(
-        os.getenv("WAKE_ACOUSTIC_SCORE_WEIGHT", "0.22")
+    tts_stream_group_target_chars: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_GROUP_TARGET_CHARS", "150")
     )
-    wake_dtw_score_weight: float = float(os.getenv("WAKE_DTW_SCORE_WEIGHT", "0.32"))
-    wake_transcript_score_floor: float = float(
-        os.getenv("WAKE_TRANSCRIPT_SCORE_FLOOR", "0.52")
+    tts_stream_max_group_sentences: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_MAX_GROUP_SENTENCES", "2")
     )
-    wake_acoustic_candidate_threshold: float = float(
-        os.getenv("WAKE_ACOUSTIC_CANDIDATE_THRESHOLD", "0.54")
+    tts_stream_clause_boundary_chars: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_CLAUSE_BOUNDARY_CHARS", "120")
     )
-    wake_fast_path_threshold: float = float(
-        os.getenv("WAKE_FAST_PATH_THRESHOLD", "0.89")
+    tts_stream_tail_merge_chars: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_TAIL_MERGE_CHARS", "40")
     )
-    wake_fast_path_max_seconds: float = float(
-        os.getenv("WAKE_FAST_PATH_MAX_SECONDS", "0.95")
+    tts_stream_tail_merge_overflow_chars: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_TAIL_MERGE_OVERFLOW_CHARS", "48")
     )
-    wake_noise_tolerance: float = float(os.getenv("WAKE_NOISE_TOLERANCE", "0.70"))
-    wake_mispronunciation_tolerance: float = float(
-        os.getenv("WAKE_MISPRONUNCIATION_TOLERANCE", "0.78")
+    tts_stream_soft_chunk_chars: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_SOFT_CHUNK_CHARS", "150")
     )
-    wake_noise_reduction_strength: float = float(
-        os.getenv("WAKE_NOISE_REDUCTION_STRENGTH", "0.64")
+    tts_stream_max_chunk_chars: int = field(
+        default_factory=lambda: _env_int("TTS_STREAM_MAX_CHUNK_CHARS", "240")
     )
-    wake_echo_suppression_strength: float = float(
-        os.getenv("WAKE_ECHO_SUPPRESSION_STRENGTH", "0.24")
+    practical_voice_mode: bool = field(
+        default_factory=lambda: _env_bool("PRACTICAL_VOICE_MODE", False)
     )
-    wake_normalization_target_rms: float = float(
-        os.getenv("WAKE_NORMALIZATION_TARGET_RMS", "0.11")
+    wake_phrase: str = field(default_factory=lambda: _env_str("WAKE_PHRASE", "hey lulu"))
+    wake_scan_max_record_seconds: float = field(
+        default_factory=lambda: _env_float("WAKE_SCAN_MAX_RECORD_SECONDS", "3.0")
     )
-    wake_feature_frame_ms: float = float(os.getenv("WAKE_FEATURE_FRAME_MS", "25.0"))
-    wake_feature_hop_ms: float = float(os.getenv("WAKE_FEATURE_HOP_MS", "10.0"))
-    wake_mel_bins: int = int(os.getenv("WAKE_MEL_BINS", "20"))
-    wake_mfcc_count: int = int(os.getenv("WAKE_MFCC_COUNT", "13"))
-    continuous_listening_enabled: bool = os.getenv(
-        "CONTINUOUS_LISTENING_ENABLED", "true"
-    ).lower() in {"1", "true", "yes", "on"}
+    wake_scan_min_speech_seconds: float = field(
+        default_factory=lambda: _env_float("WAKE_SCAN_MIN_SPEECH_SECONDS", "0.25")
+    )
+    wake_scan_silence_seconds: float = field(
+        default_factory=lambda: _env_float("WAKE_SCAN_SILENCE_SECONDS", "0.45")
+    )
+    wake_scan_pre_roll_chunks: int = field(
+        default_factory=lambda: _env_int("WAKE_SCAN_PRE_ROLL_CHUNKS", "6")
+    )
+    conversation_window_seconds: float = field(
+        default_factory=lambda: _env_float("CONVERSATION_WINDOW_SECONDS", "12.0")
+    )
+    wake_cooldown_seconds: float = field(
+        default_factory=lambda: _env_float("WAKE_COOLDOWN_SECONDS", "1.2")
+    )
+    self_audio_guard_seconds: float = field(
+        default_factory=lambda: _env_float("SELF_AUDIO_GUARD_SECONDS", "8.0")
+    )
+    self_audio_similarity_threshold: float = field(
+        default_factory=lambda: _env_float("SELF_AUDIO_SIMILARITY_THRESHOLD", "0.74")
+    )
+    wake_match_score_threshold: float = field(
+        default_factory=lambda: _env_float("WAKE_MATCH_SCORE_THRESHOLD", "0.84")
+    )
+    wake_confidence_threshold: float = field(
+        default_factory=lambda: _env_float("WAKE_CONFIDENCE_THRESHOLD", "0.73")
+    )
+    wake_text_score_weight: float = field(
+        default_factory=lambda: _env_float("WAKE_TEXT_SCORE_WEIGHT", "0.46")
+    )
+    wake_acoustic_score_weight: float = field(
+        default_factory=lambda: _env_float("WAKE_ACOUSTIC_SCORE_WEIGHT", "0.22")
+    )
+    wake_dtw_score_weight: float = field(
+        default_factory=lambda: _env_float("WAKE_DTW_SCORE_WEIGHT", "0.32")
+    )
+    wake_transcript_score_floor: float = field(
+        default_factory=lambda: _env_float("WAKE_TRANSCRIPT_SCORE_FLOOR", "0.52")
+    )
+    wake_acoustic_candidate_threshold: float = field(
+        default_factory=lambda: _env_float("WAKE_ACOUSTIC_CANDIDATE_THRESHOLD", "0.54")
+    )
+    wake_fast_path_threshold: float = field(
+        default_factory=lambda: _env_float("WAKE_FAST_PATH_THRESHOLD", "0.89")
+    )
+    wake_fast_path_max_seconds: float = field(
+        default_factory=lambda: _env_float("WAKE_FAST_PATH_MAX_SECONDS", "0.95")
+    )
+    wake_noise_tolerance: float = field(
+        default_factory=lambda: _env_float("WAKE_NOISE_TOLERANCE", "0.70")
+    )
+    wake_mispronunciation_tolerance: float = field(
+        default_factory=lambda: _env_float("WAKE_MISPRONUNCIATION_TOLERANCE", "0.78")
+    )
+    wake_noise_reduction_strength: float = field(
+        default_factory=lambda: _env_float("WAKE_NOISE_REDUCTION_STRENGTH", "0.64")
+    )
+    wake_echo_suppression_strength: float = field(
+        default_factory=lambda: _env_float("WAKE_ECHO_SUPPRESSION_STRENGTH", "0.24")
+    )
+    wake_normalization_target_rms: float = field(
+        default_factory=lambda: _env_float("WAKE_NORMALIZATION_TARGET_RMS", "0.11")
+    )
+    wake_feature_frame_ms: float = field(
+        default_factory=lambda: _env_float("WAKE_FEATURE_FRAME_MS", "25.0")
+    )
+    wake_feature_hop_ms: float = field(
+        default_factory=lambda: _env_float("WAKE_FEATURE_HOP_MS", "10.0")
+    )
+    wake_mel_bins: int = field(default_factory=lambda: _env_int("WAKE_MEL_BINS", "20"))
+    wake_mfcc_count: int = field(default_factory=lambda: _env_int("WAKE_MFCC_COUNT", "13"))
+    continuous_listening_enabled: bool = field(
+        default_factory=lambda: _env_bool("CONTINUOUS_LISTENING_ENABLED", True)
+    )
 
     def __post_init__(self) -> None:
+        if not self.wake_phrase.strip():
+            raise ValueError("WAKE_PHRASE must not be empty.")
         if not self.practical_voice_mode:
             return
 

@@ -57,19 +57,19 @@ def main() -> None:
     tts.set_on_chunk_spoken(on_chunk_spoken)
     tts.set_on_chunk_error(on_chunk_error)
 
-    ui.start()
-    if not _bootstrap_connection(ollama_client, ui, args.text_input):
-        return
-    if args.text_input:
-        ui.set_runtime_mode("text")
-    elif args.turn_based or not settings.continuous_listening_enabled:
-        ui.set_runtime_mode("turn-based")
-    else:
-        ui.set_runtime_mode("continuous")
-    if args.turn_based:
-        ui.log_event("Turn-based troubleshooting mode enabled.")
-
     try:
+        ui.start()
+        if not _bootstrap_connection(ollama_client, ui, args.text_input):
+            return
+        if args.text_input:
+            ui.set_runtime_mode("text")
+        elif args.turn_based or not settings.continuous_listening_enabled:
+            ui.set_runtime_mode("turn-based")
+        else:
+            ui.set_runtime_mode("continuous")
+        if args.turn_based:
+            ui.log_event("Turn-based troubleshooting mode enabled.")
+
         if args.text_input:
             _run_text_loop(settings, router, ollama_client, tts, ui)
         elif settings.continuous_listening_enabled and not args.turn_based:
