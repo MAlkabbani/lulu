@@ -132,7 +132,10 @@ The current shipped baseline uses these defaults unless overridden by environmen
 - wake cooldown: `1.2` seconds
 - self-audio guard window: `8.0` seconds
 - self-audio similarity threshold: `0.74`
-- wake match score threshold: `0.86`
+- wake match score threshold: `0.84`
+- wake probabilistic confidence threshold: `0.73`
+- wake acoustic candidate threshold: `0.54`
+- wake fast-path threshold: `0.89`
 
 ### 6.3 Runtime Ownership Boundary
 

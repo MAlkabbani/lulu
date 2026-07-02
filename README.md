@@ -16,6 +16,7 @@ This current product baseline is designed for a Mac M1 workflow in July 2026:
 - [Installation And Operations Runbook](./docs/operations.md)
 - [Reconstructed Product Requirements Document](./docs/prd.md)
 - [Decision Log](./docs/decision-log.md)
+- [Wake Performance Report](./docs/wake-performance-report.md)
 - [Original Project Blueprint](./Project_Blueprint_AI_Assistant.md)
 
 Use these docs by role:
@@ -125,7 +126,9 @@ Lulu now stores long-term memory as canonical records:
 ```text
 Microphone
   -> sounddevice + numpy VAD
-  -> mlx-whisper transcription
+  -> wake preprocessing + MFCC / centroid / ZCR extraction
+  -> DTW acoustic wake scorer
+  -> mlx-whisper transcription when needed
   -> HybridRouter
      -> Explicit path: Chroma upsert
      -> Chat path:
@@ -220,10 +223,16 @@ sequenceDiagram
 
     loop Passive listening
         Main->>Audio: record_wake_scan()
-        Audio->>STT: transcribe short buffer
-        STT-->>Audio: Transcript
-        Audio->>Wake: match_wake_phrase()
-        Wake-->>Main: score and remainder
+        Audio->>Wake: preprocess + extract wake features
+        Wake->>Wake: DTW acoustic scoring
+        alt Short confident bare wake
+            Wake-->>Main: fast-path wake acceptance
+        else Needs transcript confirmation
+            Audio->>STT: transcribe short buffer
+            STT-->>Audio: Transcript
+            Audio->>Wake: combine transcript + acoustic confidence
+            Wake-->>Main: score and remainder
+        end
         Main->>Guard: compare against recent assistant speech
         alt Accepted wake and not echo
             Main->>Router: Process inline request or open follow-up window
@@ -400,7 +409,7 @@ source .venv/bin/activate
 python main.py
 ```
 
-Lulu now runs in always-on passive listening mode by default. It waits for the fixed wake phrase `hey lulu`, uses a scored matcher to tolerate common Whisper-style confusions such as `hay lou lou`, opens a follow-up conversation window, then returns to passive listening automatically after the window expires. The wake debug panel now also shows session success rate, average wake score, top rejection reasons, and live guidance when Whisper captured something that still was not a usable wake phrase.
+Lulu now runs in always-on passive listening mode by default. It waits for the fixed wake phrase `hey lulu`, preprocesses short wake scans with local noise reduction, single-channel echo suppression, and RMS normalization, extracts MFCC plus spectral features, scores the audio against built-in DTW wake templates, and then uses Whisper only when the acoustic stage needs transcript confirmation or inline-request extraction. The wake debug panel now also shows acoustic confidence, DTW score, SNR, feature-frame count, session success rate, average wake score, top rejection reasons, and live guidance when a wake attempt still was not usable.
 
 Recommended voice flow:
 
@@ -414,7 +423,7 @@ The terminal now shows a small live dashboard with:
 
 - current assistant mode such as `passive_listening`, `conversation_window`, `thinking`, and `speaking`
 - a visible runtime badge showing `CONTINUOUS`, `TURN-BASED`, or `TEXT`
-- a wake debug panel with the current score threshold, voice profile, accepted/rejected counters, session success rate, average wake score, top rejection reasons, score bins, guidance, and recent accepted/rejected wake attempts
+- a wake debug panel with dynamic confidence threshold, acoustic confidence, DTW score, SNR, feature-frame count, accepted/rejected counters, session success rate, average wake score, top rejection reasons, score bins, guidance, and recent accepted/rejected wake attempts
 - latest transcript and spoken response
 - speech continuity indicators such as chunk counts, average chunk size, tail merges, and buffer gaps
 - recent memory saves
@@ -506,7 +515,24 @@ export CONVERSATION_WINDOW_SECONDS="12.0"
 export WAKE_COOLDOWN_SECONDS="1.2"
 export SELF_AUDIO_GUARD_SECONDS="8.0"
 export SELF_AUDIO_SIMILARITY_THRESHOLD="0.74"
-export WAKE_MATCH_SCORE_THRESHOLD="0.86"
+export WAKE_MATCH_SCORE_THRESHOLD="0.84"
+export WAKE_CONFIDENCE_THRESHOLD="0.73"
+export WAKE_TEXT_SCORE_WEIGHT="0.46"
+export WAKE_ACOUSTIC_SCORE_WEIGHT="0.22"
+export WAKE_DTW_SCORE_WEIGHT="0.32"
+export WAKE_TRANSCRIPT_SCORE_FLOOR="0.52"
+export WAKE_ACOUSTIC_CANDIDATE_THRESHOLD="0.54"
+export WAKE_FAST_PATH_THRESHOLD="0.89"
+export WAKE_FAST_PATH_MAX_SECONDS="0.95"
+export WAKE_NOISE_TOLERANCE="0.70"
+export WAKE_MISPRONUNCIATION_TOLERANCE="0.78"
+export WAKE_NOISE_REDUCTION_STRENGTH="0.64"
+export WAKE_ECHO_SUPPRESSION_STRENGTH="0.24"
+export WAKE_NORMALIZATION_TARGET_RMS="0.11"
+export WAKE_FEATURE_FRAME_MS="25.0"
+export WAKE_FEATURE_HOP_MS="10.0"
+export WAKE_MEL_BINS="20"
+export WAKE_MFCC_COUNT="13"
 export CONTINUOUS_LISTENING_ENABLED="true"
 ```
 

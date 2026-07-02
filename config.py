@@ -87,8 +87,45 @@ class Settings:
         os.getenv("SELF_AUDIO_SIMILARITY_THRESHOLD", "0.74")
     )
     wake_match_score_threshold: float = float(
-        os.getenv("WAKE_MATCH_SCORE_THRESHOLD", "0.86")
+        os.getenv("WAKE_MATCH_SCORE_THRESHOLD", "0.84")
     )
+    wake_confidence_threshold: float = float(
+        os.getenv("WAKE_CONFIDENCE_THRESHOLD", "0.73")
+    )
+    wake_text_score_weight: float = float(os.getenv("WAKE_TEXT_SCORE_WEIGHT", "0.46"))
+    wake_acoustic_score_weight: float = float(
+        os.getenv("WAKE_ACOUSTIC_SCORE_WEIGHT", "0.22")
+    )
+    wake_dtw_score_weight: float = float(os.getenv("WAKE_DTW_SCORE_WEIGHT", "0.32"))
+    wake_transcript_score_floor: float = float(
+        os.getenv("WAKE_TRANSCRIPT_SCORE_FLOOR", "0.52")
+    )
+    wake_acoustic_candidate_threshold: float = float(
+        os.getenv("WAKE_ACOUSTIC_CANDIDATE_THRESHOLD", "0.54")
+    )
+    wake_fast_path_threshold: float = float(
+        os.getenv("WAKE_FAST_PATH_THRESHOLD", "0.89")
+    )
+    wake_fast_path_max_seconds: float = float(
+        os.getenv("WAKE_FAST_PATH_MAX_SECONDS", "0.95")
+    )
+    wake_noise_tolerance: float = float(os.getenv("WAKE_NOISE_TOLERANCE", "0.70"))
+    wake_mispronunciation_tolerance: float = float(
+        os.getenv("WAKE_MISPRONUNCIATION_TOLERANCE", "0.78")
+    )
+    wake_noise_reduction_strength: float = float(
+        os.getenv("WAKE_NOISE_REDUCTION_STRENGTH", "0.64")
+    )
+    wake_echo_suppression_strength: float = float(
+        os.getenv("WAKE_ECHO_SUPPRESSION_STRENGTH", "0.24")
+    )
+    wake_normalization_target_rms: float = float(
+        os.getenv("WAKE_NORMALIZATION_TARGET_RMS", "0.11")
+    )
+    wake_feature_frame_ms: float = float(os.getenv("WAKE_FEATURE_FRAME_MS", "25.0"))
+    wake_feature_hop_ms: float = float(os.getenv("WAKE_FEATURE_HOP_MS", "10.0"))
+    wake_mel_bins: int = int(os.getenv("WAKE_MEL_BINS", "20"))
+    wake_mfcc_count: int = int(os.getenv("WAKE_MFCC_COUNT", "13"))
     continuous_listening_enabled: bool = os.getenv(
         "CONTINUOUS_LISTENING_ENABLED", "true"
     ).lower() in {"1", "true", "yes", "on"}
@@ -125,7 +162,27 @@ class Settings:
         object.__setattr__(
             self,
             "wake_match_score_threshold",
-            min(self.wake_match_score_threshold, 0.84),
+            min(self.wake_match_score_threshold, 0.82),
+        )
+        object.__setattr__(
+            self,
+            "wake_confidence_threshold",
+            min(self.wake_confidence_threshold, 0.71),
+        )
+        object.__setattr__(
+            self,
+            "wake_acoustic_candidate_threshold",
+            min(self.wake_acoustic_candidate_threshold, 0.53),
+        )
+        object.__setattr__(
+            self,
+            "wake_noise_tolerance",
+            max(self.wake_noise_tolerance, 0.72),
+        )
+        object.__setattr__(
+            self,
+            "wake_mispronunciation_tolerance",
+            max(self.wake_mispronunciation_tolerance, 0.78),
         )
 
 

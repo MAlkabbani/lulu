@@ -220,7 +220,22 @@ The reliable continuous-listening flow is:
 
 If live wake capture still feels fragile in your room, enable `PRACTICAL_VOICE_MODE="true"` in `.env` and restart Lulu. That preset makes the wake scan slightly more forgiving and gives you a longer follow-up window after a successful wake.
 
-Before changing more knobs, use the wake debug panel to check the session success rate, average wake score, top rejection reasons, and current guidance. Those signals usually tell you whether the issue is short captures, low-confidence phrase matching, or self-audio suppression.
+Before changing more knobs, use the wake debug panel to check the session success rate, acoustic confidence, DTW score, SNR, average wake score, top rejection reasons, and current guidance. Those signals usually tell you whether the issue is short captures, poor signal quality, low-confidence phrase matching, or self-audio suppression.
+
+The current tuned wake defaults for the enhanced matcher are:
+
+```bash
+WAKE_MATCH_SCORE_THRESHOLD="0.84"
+WAKE_CONFIDENCE_THRESHOLD="0.73"
+WAKE_ACOUSTIC_CANDIDATE_THRESHOLD="0.54"
+WAKE_FAST_PATH_THRESHOLD="0.89"
+WAKE_NOISE_TOLERANCE="0.70"
+WAKE_MISPRONUNCIATION_TOLERANCE="0.78"
+WAKE_NOISE_REDUCTION_STRENGTH="0.64"
+WAKE_ECHO_SUPPRESSION_STRENGTH="0.24"
+```
+
+Tune `WAKE_NOISE_TOLERANCE` upward when the room is noisy but you still want aggressive wake acceptance, and tune `WAKE_MISPRONUNCIATION_TOLERANCE` upward when you want the acoustic matcher to offset small pronunciation drift more aggressively.
 
 ### Speech output sounds choppy
 

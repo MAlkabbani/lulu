@@ -7,6 +7,7 @@ This directory is the public, version-controlled documentation surface for Lulu 
 - [Installation And Operations Runbook](./operations.md)
 - [Product Requirements Document](./prd.md)
 - [Decision Log](./decision-log.md)
+- [Wake Performance Report](./wake-performance-report.md)
 - [Project Blueprint](../Project_Blueprint_AI_Assistant.md)
 
 ## Current Product Baseline
@@ -17,7 +18,7 @@ The current documented product baseline includes:
 - hybrid memory routing with explicit and autonomous save paths
 - canonical semantic memory deduplication with backend tagging
 - grouped, smoothness-first streamed TTS on top of native macOS `say`
-- continuous listening with scored wake matching, cooldown, self-audio suppression, and optional practical voice tuning
+- continuous listening with acoustic preprocessing, DTW-assisted wake matching, transcript confirmation, cooldown, self-audio suppression, and optional practical voice tuning
 - terminal observability for runtime mode, speech continuity, latency, memory, and wake diagnostics
 
 ## Engineering Plans And Implementation History
