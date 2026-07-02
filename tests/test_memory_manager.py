@@ -211,6 +211,32 @@ def test_list_recent_memories_orders_by_updated_at_desc() -> None:
     assert hits[0].metadata["updated_at"] >= hits[1].metadata["updated_at"]
 
 
+def test_list_recent_memories_does_not_drop_newer_records_beyond_limit_window() -> None:
+    collection = FakeCollection()
+    model_client = FakeModelClient(
+        embedding_map={
+            "I like jasmine tea": [0.10],
+            "My dentist appointment is on Friday": [0.30],
+            "I prefer quiet mornings": [0.50],
+        },
+        tag_map={
+            "I like jasmine tea": ["tea", "preference"],
+            "My dentist appointment is on Friday": ["schedule", "dentist"],
+            "I prefer quiet mornings": ["routine", "preference"],
+        },
+    )
+    manager = MemoryManager(build_settings(), model_client, collection=collection)
+    manager.upsert_memory("I like jasmine tea", source="explicit")
+    second = manager.upsert_memory("My dentist appointment is on Friday", source="tool_call")
+    third = manager.upsert_memory("I prefer quiet mornings", source="explicit")
+
+    hits = manager.list_recent_memories(limit=2)
+
+    assert [hit.id for hit in hits] == [third.memory_id, second.memory_id]
+    assert third.memory_id in [hit.id for hit in hits]
+    assert len(hits) == 2
+
+
 def test_explain_memory_returns_auditable_metadata() -> None:
     collection = FakeCollection()
     model_client = FakeModelClient(

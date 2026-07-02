@@ -199,12 +199,11 @@ class MemoryManager:
             return []
 
         raw = self.collection.get(
-            limit=limit,
             include=["documents", "metadatas"],
         )
         hits = self._hits_from_get_result(raw)
         hits.sort(
-            key=lambda hit: str(hit.metadata.get("updated_at", "")),
+            key=lambda hit: hit.metadata.get("updated_at", ""),
             reverse=True,
         )
         return hits[:limit]
