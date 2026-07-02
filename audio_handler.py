@@ -49,6 +49,7 @@ class PhraseChunker:
         self.settings = settings
         self.buffer = ""
         self._sentence_boundary_pattern = re.compile(r"(.+?[.!?])(\s+|$)", re.DOTALL)
+        self._clause_boundary_pattern = re.compile(r"(.+?[,;:])(\s+|$)", re.DOTALL)
 
     def push(self, text: str) -> list[str]:
         if text:
@@ -107,6 +108,10 @@ class PhraseChunker:
         if sentence_break is not None:
             return self._pop_chunk(sentence_break)
 
+        clause_break = self._find_clause_break_before(self.settings.tts_stream_soft_chunk_chars)
+        if clause_break is not None:
+            return self._pop_chunk(clause_break)
+
         if len(self.buffer) < self.settings.tts_stream_max_chunk_chars:
             return None
 
@@ -115,6 +120,10 @@ class PhraseChunker:
         )
         if sentence_break is not None:
             return self._pop_chunk(sentence_break)
+
+        clause_break = self._find_clause_break_before(self.settings.tts_stream_max_chunk_chars)
+        if clause_break is not None:
+            return self._pop_chunk(clause_break)
 
         hard_break = self._find_break_before(self.settings.tts_stream_max_chunk_chars)
         if hard_break is None:
@@ -142,6 +151,21 @@ class PhraseChunker:
         if best_group_end is not None:
             return best_group_end
         return boundaries[0]
+
+    def _find_clause_break_before(self, limit: int) -> int | None:
+        if limit < self.settings.tts_stream_clause_boundary_chars:
+            return None
+
+        best_boundary: int | None = None
+        for match in self._clause_boundary_pattern.finditer(self.buffer):
+            clause_end = match.end(1)
+            if clause_end > limit:
+                break
+            candidate = self.buffer[:clause_end].strip()
+            if len(candidate) < self.settings.tts_stream_clause_boundary_chars:
+                continue
+            best_boundary = clause_end
+        return best_boundary
 
     def _find_break_before(self, limit: int) -> int | None:
         capped = self.buffer[:limit]

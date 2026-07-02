@@ -389,9 +389,9 @@ The terminal now shows a small live dashboard with:
 - latest transcript and spoken response
 - recent memory saves
 - a recent-turn event log for capture, transcription, recall, save, and response milestones
-- per-turn latency snapshots for capture, STT, router, TTS, and total turn time
+- per-turn latency snapshots for capture, STT, router, first token, first spoken chunk, TTS, and total turn time
 
-Replies now stream into speech in phrase-sized chunks, so Lulu can begin talking before the full response is complete. This phrase-boundary policy favors lower latency today, but it may sound choppier than sentence-sized chunks and is intentionally isolated so it can be swapped later if user testing prefers smoother playback.
+Replies now stream into speech in grouped, smoothness-first chunks, so Lulu can begin talking before the full response is complete. The current policy buffers the first spoken chunk, prefers sentence boundaries, falls back to clause-aware breaks before hard splits, and merges tiny final tails backward when safe. This still favors lower latency than full-response playback, but some seams can remain because native macOS `say` is restarted per chunk.
 
 While Lulu is speaking and briefly afterward, wake detection enters a software cooldown so the assistant does not immediately retrigger on its own TTS output. Lulu also applies a lightweight transcript-similarity guard for a short post-speech window to suppress likely self-audio echoes by comparing wake-scan transcripts against the recent final reply and recently spoken chunks.
 
@@ -461,6 +461,7 @@ export TTS_STREAM_MIN_CHUNK_CHARS="36"
 export TTS_STREAM_START_BUFFER_CHARS="110"
 export TTS_STREAM_GROUP_TARGET_CHARS="150"
 export TTS_STREAM_MAX_GROUP_SENTENCES="2"
+export TTS_STREAM_CLAUSE_BOUNDARY_CHARS="120"
 export TTS_STREAM_TAIL_MERGE_CHARS="40"
 export TTS_STREAM_TAIL_MERGE_OVERFLOW_CHARS="48"
 export TTS_STREAM_SOFT_CHUNK_CHARS="150"

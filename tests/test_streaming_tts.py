@@ -11,12 +11,22 @@ class FakeUI:
     def __init__(self) -> None:
         self.responses: list[str] = []
         self.emitted_chunks: list[str] = []
+        self.playback_gaps = 0
+        self.tail_merges = 0
+        self.state = SimpleNamespace(emitted_chunk_count=0, spoken_chunk_count=0)
 
     def set_response(self, response: str) -> None:
         self.responses.append(response)
 
     def record_emitted_chunk(self, chunk: str) -> None:
         self.emitted_chunks.append(chunk)
+        self.state.emitted_chunk_count += 1
+
+    def record_playback_gap(self) -> None:
+        self.playback_gaps += 1
+
+    def record_tail_merge(self) -> None:
+        self.tail_merges += 1
 
 
 class FakeTTS:
@@ -102,6 +112,27 @@ def test_phrase_chunker_groups_two_short_sentences_into_one_chunk() -> None:
     assert chunker.finish() == []
 
 
+def test_phrase_chunker_prefers_clause_break_before_hard_split() -> None:
+    chunker = PhraseChunker(
+        Settings(
+            tts_stream_min_chunk_chars=8,
+            tts_stream_group_target_chars=32,
+            tts_stream_max_group_sentences=1,
+            tts_stream_clause_boundary_chars=24,
+            tts_stream_soft_chunk_chars=40,
+            tts_stream_max_chunk_chars=56,
+        )
+    )
+
+    ready = chunker.push(
+        "This answer has a useful pause, so the chunker can break here before it hard splits the rest"
+    )
+
+    assert ready[0] == "This answer has a useful pause,"
+    assert ready[1] == "so the chunker can break here before it hard splits the"
+    assert chunker.finish() == ["rest"]
+
+
 def test_stream_and_chunk_accumulates_text_and_emits_in_order() -> None:
     chunker = PhraseChunker(build_settings())
     tts = FakeTTS()
@@ -140,7 +171,7 @@ def test_stream_and_chunk_delays_first_playback_until_buffer_threshold() -> None
     response_parts: list[str] = []
 
     stream = _stream_and_chunk(
-        stream_source=iter(["Hello world. ", "Another sentence."]),
+        stream_source=iter(["Hello world. ", "Another sentence. ", "Final bit."]),
         settings=settings,
         chunker=chunker,
         tts=tts,
@@ -150,10 +181,11 @@ def test_stream_and_chunk_delays_first_playback_until_buffer_threshold() -> None
 
     assert next(stream) == "Hello world. "
     assert tts.chunks == []
-    assert next(stream) == "Another sentence."
+    assert next(stream) == "Another sentence. "
     assert tts.chunks == ["Hello world."]
-    assert list(stream) == []
-    assert tts.chunks == ["Hello world.", "Another sentence."]
+    assert list(stream) == ["Final bit."]
+    assert tts.chunks == ["Hello world.", "Another sentence.", "Final bit."]
+    assert ui.playback_gaps == 1
 
 
 def test_stream_and_chunk_merges_short_final_tail_before_playback() -> None:
@@ -176,6 +208,7 @@ def test_stream_and_chunk_merges_short_final_tail_before_playback() -> None:
     )
 
     assert tts.chunks == [text]
+    assert ui.tail_merges == 1
 
 
 def test_macos_tts_queue_preserves_chunk_order(monkeypatch) -> None:
