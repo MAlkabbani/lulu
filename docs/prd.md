@@ -74,7 +74,7 @@ A developer or maintainer who needs to observe, tune, and extend the assistant's
 - Local chat and embedding generation through Ollama
 - Persistent semantic memory in ChromaDB
 - Explicit memory storage via `insert info ...`
-- Autonomous memory storage and read-only lookup via a validated backend tool registry
+- Autonomous memory storage, read-only lookup, and auditable memory inspection via a validated backend tool registry
 - Phrase-boundary streamed speech output using macOS `say`
 - Continuous listening with fixed wake phrase `hey lulu`
 - Short active conversation window after wake
@@ -102,7 +102,7 @@ Lulu uses a hybrid router with two main behavior paths:
 For user-facing operation, the current baseline distinguishes three invocation outcomes:
 
 - deterministic explicit-save commands such as `insert info ...`
-- natural-language turns that may trigger validated memory tools such as `save_to_memory` or `search_memory`
+- natural-language turns that may trigger validated memory tools such as `save_to_memory`, `search_memory`, `list_recent_memories`, or `explain_memory_hit`
 - normal chat turns that produce a reply without any backend action
 
 The product supports three runtime modes:
@@ -165,7 +165,7 @@ sequenceDiagram
     TTS-->>User: "Information explicitly saved to vault."
 ```
 
-### 7.2 Conversational Turn With Optional Autonomous Memory Save
+### 7.2 Conversational Turn With Optional Autonomous Memory Tools
 
 ```mermaid
 sequenceDiagram
@@ -204,6 +204,16 @@ sequenceDiagram
             Embed-->>Memory: Vector
             Memory->>Vault: Insert or update canonical record
             Vault-->>Memory: Persisted
+        end
+        alt list_recent_memories
+            Chat-->>Router: tool_calls.list_recent_memories(limit)
+            Router->>Memory: list_recent_memories(limit)
+            Memory-->>Router: Recent canonical records
+        end
+        alt explain_memory_hit
+            Chat-->>Router: tool_calls.explain_memory_hit(memory_id)
+            Router->>Memory: explain_memory(memory_id)
+            Memory-->>Router: Auditable memory detail
         end
         Router->>Chat: Tool result messages
         Chat-->>Router: Final assistant reply
@@ -309,41 +319,45 @@ For non-explicit turns, the product shall query persistent memory and provide th
 
 ### FR-7 Autonomous Memory Tool Calling
 
-The conversational model shall have access only to allowlisted memory tools exposed through the backend registry. The current baseline supports `save_to_memory` and `search_memory`, and the backend shall enforce bounded tool rounds and bounded tool calls per round.
+The conversational model shall have access only to allowlisted memory tools exposed through the backend registry. The current baseline supports `save_to_memory`, `search_memory`, `list_recent_memories`, and `explain_memory_hit`, and the backend shall enforce bounded tool rounds and bounded tool calls per round.
 
-### FR-8 Canonical Long-Term Memory
+### FR-8 Auditable Memory Metadata
+
+Canonical memory records shall preserve typed metadata including primary category, source semantics, revision count, and update timestamps so tool results and operator inspection can explain what Lulu stored and how it changed.
+
+### FR-9 Canonical Long-Term Memory
 
 The product shall store long-term facts as canonical records, deduplicate near-duplicates semantically, apply backend tags, and use latest-wins behavior for conflicting facts in the same semantic slot.
 
-### FR-9 Streamed Spoken Responses
+### FR-10 Streamed Spoken Responses
 
 The product shall begin speech playback before the full model response is complete by chunking the response at phrase boundaries and queueing native TTS playback.
 
-### FR-10 Continuous Listening
+### FR-11 Continuous Listening
 
 The product shall support passive wake scanning with a fixed wake phrase, an active follow-up conversation window, and automatic return to passive listening after the window expires.
 
-### FR-11 Wake Robustness
+### FR-12 Wake Robustness
 
 Wake detection shall tolerate common transcription confusions through scored matching rather than exact string equality.
 
-### FR-12 Self-Audio Suppression
+### FR-13 Self-Audio Suppression
 
 The product shall reduce assistant self-triggering by combining a cooldown period with transcript similarity checks against recent assistant speech.
 
-### FR-13 Operator Observability
+### FR-14 Operator Observability
 
 The terminal dashboard shall expose runtime mode, state transitions, recent transcript and response, memory events, invocation path, tool-state summaries, latency snapshots, wake attempt diagnostics, and event logs.
 
-### FR-14 Manual Memory Inspection
+### FR-15 Manual Memory Inspection
 
 The product shall provide a read-only utility for inspecting stored memory content and semantic recall behavior without modifying the database.
 
-### FR-15 Safe Tool And Output Handling
+### FR-16 Safe Tool And Output Handling
 
 The backend shall validate tool arguments against registered schemas, execute only allowlisted backend tools, return structured tool success and failure payloads, treat recalled memory as untrusted context, and invoke TTS without shell interpolation.
 
-### FR-16 Dependency Failure Handling
+### FR-17 Dependency Failure Handling
 
 The product shall expose degraded but understandable behavior when a core dependency is unavailable.
 
@@ -424,6 +438,8 @@ Acceptance criteria:
 
 - Given a non-explicit conversational turn, when the model identifies a durable fact, then it may call `save_to_memory`.
 - Given a non-explicit conversational turn, when the user asks what Lulu remembers, then the model may call `search_memory`.
+- Given a non-explicit conversational turn, when the user asks for the latest remembered items, then the model may call `list_recent_memories`.
+- Given a prior memory tool result containing a memory id, when the user asks for more detail about that entry, then the model may call `explain_memory_hit`.
 - Given a tool call request, when the payload passes the registered schema and backend validation, then the backend executes the allowlisted memory tool and hands the result into the final generation path.
 - Given a malformed or unsupported tool request, when the backend rejects it, then Lulu returns a structured error payload instead of executing an unsafe action.
 - Given a turn with no durable fact, when the model responds, then no memory save is executed.
@@ -559,7 +575,7 @@ These metrics formalize product outcomes that were implicit in the implementatio
 - Wake performance depends on transcription quality because wake detection is transcript-gated instead of using a dedicated wake-word model.
 - Native macOS `say` lowers setup complexity but limits voice quality and interruption control.
 - Native macOS `say` still restarts per chunk, so some seams can remain even with grouped playback and tail-merge heuristics.
-- Canonical memory improves recall quality but does not yet provide a full memory revision history for user-facing audit trails.
+- Canonical memory improves recall quality, and the current baseline now exposes lightweight revision counts and source/category metadata without implementing destructive edit history or full user-managed versioning.
 - Low perceived latency is a product goal, but explicit benchmark thresholds are still an area for future instrumentation work.
 - The current product prioritizes a single-user local workflow and does not address multi-device synchronization or collaboration.
 

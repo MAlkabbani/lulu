@@ -81,8 +81,8 @@ For normal speech, Lulu will:
 
 1. Query ChromaDB for the top 3 relevant memories
 2. Inject those memories, including their backend tags, into the system prompt
-3. Call Ollama `POST /api/chat` with JSON-schema tools named `save_to_memory` and `search_memory`
-4. Let the model decide whether the turn needs memory inspection, memory save, or both
+3. Call Ollama `POST /api/chat` with JSON-schema tools named `save_to_memory`, `search_memory`, `list_recent_memories`, and `explain_memory_hit`
+4. Let the model decide whether the turn needs memory inspection, recency lookup, memory explanation, memory save, or a bounded combination of those steps
 5. Execute the selected backend tools natively in Python with bounded per-round and per-turn limits
 6. Generate a final spoken reply after the last tool result handoff
 
@@ -104,12 +104,19 @@ Use normal chat when you only want an answer and no backend action:
 - `what tea do I like?`
 - `summarize my morning schedule`
 
+Use memory-inspection prompts when you want Lulu to expose or explain stored memory directly:
+
+- `what do you remember about my schedule?`
+- `what did you remember most recently?`
+- `explain that memory entry`
+
 ### Canonical Memory Rules
 
 Lulu now stores long-term memory as canonical records:
 
 - semantic near-duplicates update the existing record instead of creating noisy copies
 - backend classification assigns 1-3 free-form tags such as `tea`, `preference`, `schedule`, or `dentist`
+- each canonical record carries an auditable primary category, source label, revision count, and updated timestamp
 - conflicting facts in the same semantic slot follow latest-wins behavior
 - recalled memories show both text and tags to the model for better context quality
 
@@ -525,7 +532,12 @@ Lulu uses the native Ollama endpoint:
 
 This matters because tool calls are handled using Ollama's native `tool_calls` format. The app does not rely on the OpenAI-compatible `/v1` layer for tool execution.
 
-Tool definitions are registered in Python with explicit metadata, schema validation, and backend executors. The current registry exposes `save_to_memory` for durable facts and `search_memory` for read-only conversational lookup.
+Tool definitions are registered in Python with explicit metadata, schema validation, and backend executors. The current registry exposes:
+
+- `save_to_memory` for durable facts
+- `search_memory` for read-only conversational lookup by topic
+- `list_recent_memories` for recency-based inspection
+- `explain_memory_hit` for auditable detail on a returned memory id
 
 Tool follow-up messages are formatted like this:
 
@@ -557,8 +569,12 @@ Then the Python app replies with a tool message whose `content` is a structured 
     "memory_id": "memory-id",
     "text": "My flight is at 5 PM tomorrow.",
     "tags": ["schedule"],
+    "category": "schedule",
     "source": "tool_call",
+    "source_label": "model-mediated",
+    "revision_count": 1,
     "similarity": null,
+    "updated_at": "2026-07-02T00:00:00+00:00",
     "matched_memory_id": null,
     "matched_text": null
   }
@@ -582,14 +598,16 @@ The terminal dashboard now surfaces the invocation path for each turn and the cu
 
 ### Safety Guardrails
 
-- The model can request only the allowlisted memory tools: `save_to_memory` and `search_memory`
+- The model can request only the allowlisted memory tools: `save_to_memory`, `search_memory`, `list_recent_memories`, and `explain_memory_hit`
 - Tool definitions are allowlisted through a backend registry with explicit validators and executors
 - Tool execution is bounded by configurable round and per-round call limits
 - Tool arguments must match the registered JSON-schema contract before execution
 - Tool success and failure payloads use a consistent JSON envelope
 - `fact` must be a non-empty string within a configurable max length
 - `query` must be a non-empty string and `limit` must be a bounded integer for `search_memory`
+- `memory_id` must come from a prior tool result when using `explain_memory_hit`
 - Memory deduplication uses a configurable semantic threshold and keeps one canonical active record
+- Canonical memories expose auditable category, source-label, revision-count, and update-time metadata in tool results
 - Backend tag classification is validated in Python and falls back to `general` on parse failures
 - Retrieved memory is treated as untrusted context, not executable instruction text
 - TTS uses the native `say` binary through `subprocess.run([...])` instead of shell-interpolating model output

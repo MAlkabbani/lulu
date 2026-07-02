@@ -12,6 +12,8 @@ class FakeMemoryManager:
     def __init__(self, action: str = "inserted", should_fail: bool = False) -> None:
         self.saved: list[tuple[str, str]] = []
         self.queries: list[tuple[str, int | None]] = []
+        self.recent_limits: list[int] = []
+        self.explained_ids: list[str] = []
         self.action = action
         self.should_fail = should_fail
         self.context = "1. [tags: tea, preference] (explicit) My favorite tea is jasmine"
@@ -22,7 +24,14 @@ class FakeMemoryManager:
                 distance=0.08,
                 similarity=0.92,
                 tags=["tea", "preference"],
-                metadata={"source": "explicit"},
+                metadata={
+                    "source": "explicit",
+                    "source_label": "direct-user",
+                    "updated_at": "2026-07-02T00:00:00+00:00",
+                    "revision_count": 1,
+                    "last_action": "inserted",
+                    "category": "tea",
+                },
             )
         ]
 
@@ -35,8 +44,12 @@ class FakeMemoryManager:
             action=self.action,
             text=text,
             tags=["tea", "preference"],
+            category="tea",
             source=source,
+            source_label="model-mediated" if source == "tool_call" else "direct-user",
+            revision_count=2 if self.action == "updated" else 1,
             similarity=0.98 if self.action == "updated" else None,
+            updated_at="2026-07-02T00:00:00+00:00",
             matched_memory_id="memory-id" if self.action == "updated" else None,
             matched_text="My favorite tea is jasmine" if self.action == "updated" else None,
         )
@@ -49,6 +62,48 @@ class FakeMemoryManager:
 
     def format_context(self, _hits: list[object]) -> str:
         return self.context
+
+    def list_recent_memories(self, limit: int) -> list[MemoryHit]:
+        self.recent_limits.append(limit)
+        return self.search_hits[:limit]
+
+    def explain_memory(self, memory_id: str) -> dict | None:
+        self.explained_ids.append(memory_id)
+        if memory_id != "memory-id":
+            return None
+        return {
+            "memory_id": memory_id,
+            "text": "My favorite tea is jasmine",
+            "tags": ["tea", "preference"],
+            "category": "tea",
+            "source": "explicit",
+            "source_label": "direct-user",
+            "revision_count": 1,
+            "last_action": "inserted",
+            "created_at": "2026-07-01T00:00:00+00:00",
+            "updated_at": "2026-07-02T00:00:00+00:00",
+            "previous_text": None,
+            "explanation": (
+                "Canonical memory in category tea, last captured via direct-user, "
+                "revised 1 time(s), and updated at 2026-07-02T00:00:00+00:00."
+            ),
+        }
+
+    def serialize_hit(self, hit: MemoryHit, *, include_similarity: bool) -> dict:
+        payload = {
+            "memory_id": hit.id,
+            "text": hit.text,
+            "tags": hit.tags,
+            "category": "tea",
+            "source": hit.metadata.get("source", "unknown"),
+            "source_label": hit.metadata.get("source_label", "unknown"),
+            "revision_count": hit.metadata.get("revision_count", 1),
+            "updated_at": hit.metadata.get("updated_at", "unknown"),
+        }
+        if include_similarity:
+            payload["similarity"] = hit.similarity
+            payload["match_confidence"] = "high"
+        return payload
 
 
 class FakeOllamaClient:
@@ -165,6 +220,42 @@ def test_tool_call_saves_memory_and_generates_follow_up() -> None:
                         },
                     },
                     "required": ["query"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_recent_memories",
+                "description": "List the most recently updated canonical memories.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Optional maximum number of recent memories to return.",
+                        }
+                    },
+                    "required": [],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "explain_memory_hit",
+                "description": "Explain a specific memory returned by search or recent-memory lookup.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "memory_id": {
+                            "type": "string",
+                            "description": "The memory identifier returned by a prior search or recent-memory list.",
+                        }
+                    },
+                    "required": ["memory_id"],
                     "additionalProperties": False,
                 },
             },
@@ -287,6 +378,72 @@ def test_prepare_turn_supports_multiple_tools_in_order() -> None:
         "running",
         "succeeded",
     ]
+
+
+def test_prepare_turn_supports_recent_memory_listing() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "list_recent_memories",
+                            "arguments": {"limit": 1},
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "Your latest memory is about jasmine tea."},
+        ]
+    )
+    router = HybridRouter(Settings(), ollama, memory)
+
+    result = router.handle_transcript("What did you remember most recently?")
+
+    assert result.reply_text == "Your latest memory is about jasmine tea."
+    assert memory.recent_limits == [1]
+    tool_messages = [message for message in ollama.seen_messages[-1] if message["role"] == "tool"]
+    payload = json.loads(tool_messages[0]["content"])
+    assert payload["ok"] is True
+    assert payload["tool_name"] == "list_recent_memories"
+    assert payload["result"]["hit_count"] == 1
+    assert payload["result"]["hits"][0]["category"] == "tea"
+
+
+def test_prepare_turn_supports_explaining_memory_hit() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "explain_memory_hit",
+                            "arguments": {"memory_id": "memory-id"},
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "That memory is a direct user preference."},
+        ]
+    )
+    router = HybridRouter(Settings(), ollama, memory)
+
+    result = router.handle_transcript("Explain that memory entry.")
+
+    assert result.reply_text == "That memory is a direct user preference."
+    assert memory.explained_ids == ["memory-id"]
+    tool_messages = [message for message in ollama.seen_messages[-1] if message["role"] == "tool"]
+    payload = json.loads(tool_messages[0]["content"])
+    assert payload["ok"] is True
+    assert payload["tool_name"] == "explain_memory_hit"
+    assert payload["result"]["source_label"] == "direct-user"
+    assert payload["result"]["revision_count"] == 1
 
 
 def test_prepare_turn_bounds_tool_rounds() -> None:
@@ -571,3 +728,32 @@ def test_prepare_turn_rejects_boolean_search_limit() -> None:
     tool_payload = json.loads(prepared.final_messages[-1]["content"])
     assert tool_payload["ok"] is False
     assert tool_payload["error"]["code"] == "invalid_argument_type"
+
+
+def test_prepare_turn_returns_error_when_explaining_missing_memory_id() -> None:
+    memory = FakeMemoryManager()
+    ollama = FakeOllamaClient(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "explain_memory_hit",
+                            "arguments": {"memory_id": "missing-id"},
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "I could not find that memory entry."},
+        ]
+    )
+    router = HybridRouter(Settings(), ollama, memory)
+
+    prepared = router.prepare_turn("Explain the missing memory entry.")
+
+    tool_payload = json.loads(prepared.final_messages[-1]["content"])
+    assert tool_payload["ok"] is False
+    assert tool_payload["tool_name"] == "explain_memory_hit"
+    assert tool_payload["error"]["code"] == "memory_not_found"

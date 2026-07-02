@@ -38,6 +38,30 @@ SEARCH_MEMORY_PARAMETERS = {
     "additionalProperties": False,
 }
 
+LIST_RECENT_MEMORIES_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "limit": {
+            "type": "integer",
+            "description": "Optional maximum number of recent memories to return.",
+        }
+    },
+    "required": [],
+    "additionalProperties": False,
+}
+
+EXPLAIN_MEMORY_HIT_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "memory_id": {
+            "type": "string",
+            "description": "The memory identifier returned by a prior search or recent-memory list.",
+        }
+    },
+    "required": ["memory_id"],
+    "additionalProperties": False,
+}
+
 ToolValidator = Callable[[dict[str, Any]], dict[str, Any]]
 ToolExecutor = Callable[[dict[str, Any]], "ToolInvocationResult"]
 
@@ -132,6 +156,8 @@ class ToolRegistry:
 
         try:
             invocation = tool.executor(validated_arguments)
+        except ToolCallError as exc:
+            return self._error_outcome(tool_name, exc.code, str(exc))
         except Exception:
             return self._error_outcome(
                 tool_name,
@@ -292,6 +318,20 @@ class HybridRouter:
                     parameters=SEARCH_MEMORY_PARAMETERS,
                     validator=self._validate_search_memory_arguments,
                     executor=self._execute_search_memory,
+                ),
+                ToolDefinition(
+                    name="list_recent_memories",
+                    description="List the most recently updated canonical memories.",
+                    parameters=LIST_RECENT_MEMORIES_PARAMETERS,
+                    validator=self._validate_list_recent_memories_arguments,
+                    executor=self._execute_list_recent_memories,
+                ),
+                ToolDefinition(
+                    name="explain_memory_hit",
+                    description="Explain a specific memory returned by search or recent-memory lookup.",
+                    parameters=EXPLAIN_MEMORY_HIT_PARAMETERS,
+                    validator=self._validate_explain_memory_hit_arguments,
+                    executor=self._execute_explain_memory_hit,
                 )
             ]
         )
@@ -536,13 +576,7 @@ class HybridRouter:
         limit = arguments["limit"]
         hits = self.memory_manager.query_memory(query, k=limit)
         result_hits = [
-            {
-                "memory_id": hit.id,
-                "text": hit.text,
-                "tags": hit.tags,
-                "source": hit.metadata.get("source", "unknown"),
-                "similarity": hit.similarity,
-            }
+            self.memory_manager.serialize_hit(hit, include_similarity=True)
             for hit in hits
         ]
         hit_count = len(result_hits)
@@ -558,6 +592,72 @@ class HybridRouter:
                 "context": self.memory_manager.format_context(hits),
             },
             display_summary=summary,
+        )
+
+    def _validate_list_recent_memories_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        limit = arguments.get("limit", self.settings.search_memory_default_limit)
+        if not isinstance(limit, int) or isinstance(limit, bool):
+            raise ToolCallError("invalid_argument_type", "Argument limit must be an integer.")
+        if limit < 1:
+            raise ToolCallError("invalid_arguments", "Argument limit must be at least 1.")
+        if limit > self.settings.search_memory_max_limit:
+            raise ToolCallError(
+                "invalid_arguments",
+                (
+                    f"Argument limit cannot exceed "
+                    f"{self.settings.search_memory_max_limit}."
+                ),
+            )
+        return {"limit": limit}
+
+    def _execute_list_recent_memories(self, arguments: dict[str, Any]) -> ToolInvocationResult:
+        limit = arguments["limit"]
+        hits = self.memory_manager.list_recent_memories(limit)
+        result_hits = [
+            self.memory_manager.serialize_hit(hit, include_similarity=False)
+            for hit in hits
+        ]
+        hit_count = len(result_hits)
+        if hit_count == 0:
+            summary = "Listed recent memories and found no stored entries."
+        else:
+            summary = f"Listed {hit_count} recent memory item(s)."
+        return ToolInvocationResult(
+            result={
+                "limit": limit,
+                "hit_count": hit_count,
+                "hits": result_hits,
+                "context": self.memory_manager.format_context(hits),
+            },
+            display_summary=summary,
+        )
+
+    def _validate_explain_memory_hit_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        memory_id = arguments.get("memory_id")
+        if not isinstance(memory_id, str):
+            raise ToolCallError("invalid_argument_type", "Argument memory_id must be a string.")
+        clean_memory_id = memory_id.strip()
+        if not clean_memory_id:
+            raise ToolCallError("invalid_arguments", "Argument memory_id cannot be empty.")
+        if len(clean_memory_id) > 128:
+            raise ToolCallError("invalid_arguments", "Argument memory_id is too long.")
+        return {"memory_id": clean_memory_id}
+
+    def _execute_explain_memory_hit(self, arguments: dict[str, Any]) -> ToolInvocationResult:
+        memory_id = arguments["memory_id"]
+        explanation = self.memory_manager.explain_memory(memory_id)
+        if explanation is None:
+            raise ToolCallError(
+                "memory_not_found",
+                "No stored memory matched the provided memory_id.",
+            )
+        return ToolInvocationResult(
+            result=explanation,
+            display_summary=(
+                f"Explained memory {memory_id} with category "
+                f"{explanation['category']} and revision count "
+                f"{explanation['revision_count']}."
+            ),
         )
 
     def _validate_fact(self, fact: Any) -> str:
