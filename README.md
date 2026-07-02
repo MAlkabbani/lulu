@@ -57,13 +57,16 @@ Support ongoing development: [Buy Me a Coffee](https://buymeacoffee.com/webeworx
 
 ## Quick Start
 
-Use the tracked automation scripts from the repo root:
+Clone the repository first. The supported install path is a local checkout plus the repo-local scripts from that checkout root:
 
 ```bash
-chmod +x scripts/install_lulu.sh scripts/start_lulu.sh
+git clone https://github.com/MAlkabbani/lulu.git
+cd lulu
 ./scripts/install_lulu.sh
 ./scripts/start_lulu.sh
 ```
+
+If you already have the repository checked out locally, run the same two script commands from that checkout root.
 
 Helpful variants:
 
@@ -82,6 +85,13 @@ python3 scripts/pdf_to_audiobook.py /path/to/book.pdf --dry-run
 
 ## Manual Setup
 
+Clone the repository and enter the checkout first:
+
+```bash
+git clone https://github.com/MAlkabbani/lulu.git
+cd lulu
+```
+
 Install machine dependencies:
 
 ```bash
@@ -98,10 +108,15 @@ python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 ```
 
-Start Ollama and pull the default models:
+Start Ollama in one terminal:
 
 ```bash
 ollama serve
+```
+
+In a second terminal, from the same repo checkout, pull the default models:
+
+```bash
 ollama pull llama3.2:3b
 ollama pull nomic-embed-text
 ```

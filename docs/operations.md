@@ -32,10 +32,16 @@ Before running the automation, make sure the target machine has:
 
 ### Default install
 
-From the repo root:
+Clone the repository and enter the checkout first:
 
 ```bash
-chmod +x scripts/install_lulu.sh scripts/start_lulu.sh
+git clone https://github.com/MAlkabbani/lulu.git
+cd lulu
+```
+
+From that checkout root:
+
+```bash
 ./scripts/install_lulu.sh
 ```
 
