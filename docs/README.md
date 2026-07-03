@@ -11,6 +11,7 @@ This directory is the public documentation surface for Lulu VAIA.
 - [Decision Log](./decision-log.md)
 - [Wake Performance Report](./wake-performance-report.md)
 - [Licensing Options](./licensing-options.md)
+- [Desktop App Implementation Spec](./implementation-plans/macos-desktop-app-implementation-spec.md)
 - [Roadmap](../ROADMAP.md)
 - [Original Project Blueprint](../Project_Blueprint_AI_Assistant.md)
 
@@ -23,6 +24,7 @@ This directory is the public documentation surface for Lulu VAIA.
 - `decision-log.md`: why major technical choices were made
 - `wake-performance-report.md`: benchmark framing and wake-system results
 - `licensing-options.md`: plain-language tradeoffs for choosing an open-source license
+- `implementation-plans/`: scoped future implementation plans and engineering specs
 
 ## Contributor Shortcuts
 
