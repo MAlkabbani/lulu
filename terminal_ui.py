@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from app_core.runtime_models import RuntimeEvent
 from config import Settings, build_wake_guidance
 
 @dataclass
@@ -345,6 +346,54 @@ class TerminalUI:
             with self._state_lock:
                 self.live.start()
                 self._refresh_locked()
+
+    def apply_runtime_event(self, event: RuntimeEvent) -> None:
+        if event.event_type == "runtime.state_changed":
+            mode = str(event.payload.get("mode", "ready"))
+            status_line = str(event.payload.get("status_line", self.state.status_line))
+            self.set_mode(mode, status_line)
+            return
+        if event.event_type == "transcript.updated":
+            transcript = str(event.payload.get("transcript", "")).strip()
+            if transcript:
+                self.set_transcript(transcript)
+            return
+        if event.event_type in {"response.partial", "response.final"}:
+            text = str(event.payload.get("text", "")).strip()
+            if text:
+                self.set_response(text)
+            return
+        if event.event_type == "memory.saved":
+            saved_items = event.payload.get("saved_items") or []
+            if isinstance(saved_items, list):
+                self.add_saved_items([str(item) for item in saved_items if str(item).strip()])
+            return
+        if event.event_type == "wake.attempt":
+            transcript = str(event.payload.get("transcript", ""))
+            score = float(event.payload.get("score", 0.0))
+            accepted = bool(event.payload.get("accepted", False))
+            reason = str(event.payload.get("reason", "unknown"))
+            self.record_wake_attempt(
+                transcript=transcript,
+                score=score,
+                accepted=accepted,
+                reason=reason,
+            )
+            return
+        if event.event_type == "tts.chunk_emitted":
+            chunk = str(event.payload.get("chunk", "")).strip()
+            if chunk:
+                self.record_emitted_chunk(chunk)
+            return
+        if event.event_type == "tts.chunk_spoken":
+            chunk = str(event.payload.get("chunk", "")).strip()
+            if chunk:
+                self.record_spoken_chunk(chunk)
+            return
+        if event.event_type == "error.reported":
+            mode = str(event.payload.get("mode", "runtime_error"))
+            detail = str(event.payload.get("detail", "Unknown runtime error"))
+            self.show_dependency_error(mode, detail)
 
     def _render(self) -> Group:
         top_row = Columns(
