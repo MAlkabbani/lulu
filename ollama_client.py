@@ -31,27 +31,6 @@ class OllamaClient:
                 f"Unable to reach Ollama at {self.settings.ollama_base_url}."
             ) from exc
 
-    def list_models(self) -> list[str]:
-        try:
-            response = self.session.get(
-                f"{self.settings.ollama_base_url}/api/tags",
-                timeout=10,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except (requests.RequestException, ValueError) as exc:
-            raise OllamaClientError("Unable to list Ollama models.") from exc
-
-        models = payload.get("models") or []
-        names: list[str] = []
-        for model in models:
-            if not isinstance(model, dict):
-                continue
-            name = model.get("name")
-            if isinstance(name, str) and name.strip():
-                names.append(name.strip())
-        return names
-
     def embed_text(self, text: str) -> list[float]:
         try:
             response = self.session.post(

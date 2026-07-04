@@ -1,55 +1,19 @@
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-
-from app_core.app_paths import (
-    default_chroma_path,
-    default_config_path,
-    default_exports_path,
-    default_logs_path,
-    detect_path_mode,
-)
 
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
 
-def _app_config() -> dict[str, object]:
-    config_path = default_config_path()
-    if not config_path.exists():
-        return {}
-    try:
-        loaded = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    if not isinstance(loaded, dict):
-        return {}
-    return loaded
-
-
-def _app_config_value(name: str) -> object | None:
-    config = _app_config()
-    if not config:
-        return None
-    candidates = [name, name.lower(), name.lower().replace("-", "_")]
-    for candidate in candidates:
-        if candidate in config:
-            return config[candidate]
-    return None
-
-
 def _env_raw(name: str) -> str | None:
     raw = os.getenv(name)
-    if raw is not None:
-        return raw.strip()
-    config_value = _app_config_value(name)
-    if config_value is None:
+    if raw is None:
         return None
-    return str(config_value).strip()
+    return raw.strip()
 
 
 def _env_str(name: str, default: str) -> str:
@@ -97,8 +61,6 @@ def _env_bool(name: str, default: bool) -> bool:
 @dataclass(frozen=True)
 class Settings:
     app_name: str = field(default_factory=lambda: _env_str("LULU_APP_NAME", "Lulu"))
-    path_mode: str = field(default_factory=detect_path_mode)
-    config_path: Path = field(default_factory=default_config_path)
     ollama_base_url: str = field(
         default_factory=lambda: _env_str("OLLAMA_BASE_URL", "http://localhost:11434")
     )
@@ -113,13 +75,9 @@ class Settings:
         )
     )
     whisper_language: str = field(default_factory=lambda: _env_str("MLX_WHISPER_LANGUAGE", "en"))
-    chroma_path: Path = field(default_factory=lambda: _env_path("CHROMA_PATH", str(default_chroma_path())))
+    chroma_path: Path = field(default_factory=lambda: _env_path("CHROMA_PATH", "./vault_db"))
     chroma_collection: str = field(
         default_factory=lambda: _env_str("CHROMA_COLLECTION", "lulu_memory")
-    )
-    logs_path: Path = field(default_factory=lambda: _env_path("LOGS_PATH", str(default_logs_path())))
-    exports_path: Path = field(
-        default_factory=lambda: _env_path("EXPORTS_PATH", str(default_exports_path()))
     )
     audio_input_device: str = field(default_factory=lambda: _env_str("AUDIO_INPUT_DEVICE", ""))
     sample_rate: int = field(default_factory=lambda: _env_int("AUDIO_SAMPLE_RATE", "16000"))

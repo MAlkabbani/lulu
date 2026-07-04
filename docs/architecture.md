@@ -17,8 +17,6 @@ Microphone
      -> wake preprocessing
      -> acoustic wake scoring
      -> mlx-whisper transcription when needed
-  -> app_core.RuntimeController
-     -> runtime state, event emission, and mode ownership
   -> HybridRouter
      -> explicit memory save or chat/tool path
   -> Ollama
@@ -27,20 +25,14 @@ Microphone
      -> ChromaDB recall and upsert
   -> MacOSTTS
      -> streamed speech chunks via macOS say
-  -> EventBus
-     -> TerminalUI and local service subscribers
   -> TerminalUI
      -> live operator feedback and diagnostics
-  -> backend_service
-     -> local HTTP + WebSocket boundary for future desktop clients
 ```
 
 ## Module Map
 
-- `main.py`: CLI bootstrap and adapter over the extracted runtime controller
-- `config.py`: environment-backed runtime settings, app-path defaults, and wake guidance text
-- `app_core/`: runtime controller, event bus, path policy, dependency probes, and reusable runtime models
-- `macos_app/`: thin SwiftUI desktop shell for text-first desktop interaction, diagnostics, and settings
+- `main.py`: app bootstrap, mode selection, turn loop orchestration, and degraded-mode handling
+- `config.py`: environment-backed runtime settings and wake guidance text
 - `audio_handler.py`: microphone capture, transcription, TTS chunking, and playback coordination
 - `pdf_audiobook.py`: offline PDF validation, text cleanup, sectioning, local audiobook export, and export playback helpers
 - `wake_detection.py`: acoustic wake matching, scoring, and fast-path eligibility
@@ -48,7 +40,6 @@ Microphone
 - `memory_manager.py`: ChromaDB persistence, deduplication, and retrieval
 - `ollama_client.py`: local Ollama transport wrapper for health checks, embeddings, and chat
 - `terminal_ui.py`: rich-based dashboard for latency, wake, memory, and response visibility
-- `backend_service/`: local authenticated HTTP + WebSocket service boundary for desktop and other local clients
 - `scripts/pdf_to_audiobook.py`: repo-local CLI wrapper for the offline audiobook workflow
 
 ## External Dependencies
@@ -60,7 +51,6 @@ Microphone
 - `ffmpeg`: optional local post-processing for portable audiobook copies
 - `sounddevice`: microphone input
 - `rich`: terminal observability layer
-- `fastapi` + `uvicorn`: local backend service boundary for future GUI clients
 - macOS `say`: built-in text-to-speech
 
 ## Quality Standards
