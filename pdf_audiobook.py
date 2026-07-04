@@ -115,17 +115,6 @@ class WorkflowArtifacts:
     extraction_summary: ExtractionSummary
 
 
-@dataclass(frozen=True)
-class ServiceJobResult:
-    job_id: str
-    status: str
-    output_dir: Path | None
-    manifest_path: Path | None
-    error: str | None
-    section_count: int
-    dry_run: bool
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -422,66 +411,6 @@ def build_audiobook_from_args(
         portable_audio_paths=portable_audio_paths,
         sections=artifacts.sections,
         extraction_summary=artifacts.extraction_summary,
-    )
-
-
-def run_service_job(
-    *,
-    job_id: str,
-    input_pdf: Path,
-    output_dir: Path,
-    title: str | None,
-    author: str | None,
-    genre: str | None,
-    chapter_splitting: str,
-    dry_run: bool,
-    portable_format: str,
-    preview_chars: int,
-    pronunciation_file: Path | None,
-    progress: Callable[[str], None],
-) -> tuple[ServiceJobResult, WorkflowArtifacts | None]:
-    args = argparse.Namespace(
-        input_pdf=str(input_pdf),
-        title=title,
-        author=author,
-        genre=genre,
-        output_dir=str(output_dir),
-        chapter_splitting=chapter_splitting,
-        dry_run=dry_run,
-        portable_format=portable_format,
-        preview_chars=preview_chars,
-        pronunciation_file=str(pronunciation_file) if pronunciation_file else None,
-        play_export=None,
-        play_after_export=False,
-        play_mode="auto",
-    )
-    validate_cli_args(args)
-    try:
-        artifacts = build_audiobook_from_args(args, progress=progress)
-    except PDFToAudiobookError as exc:
-        return (
-            ServiceJobResult(
-                job_id=job_id,
-                status="failed",
-                output_dir=None,
-                manifest_path=None,
-                error=str(exc),
-                section_count=0,
-                dry_run=dry_run,
-            ),
-            None,
-        )
-    return (
-        ServiceJobResult(
-            job_id=job_id,
-            status="completed",
-            output_dir=artifacts.output_dir,
-            manifest_path=artifacts.manifest_path,
-            error=None,
-            section_count=len(artifacts.sections),
-            dry_run=dry_run,
-        ),
-        artifacts,
     )
 
 

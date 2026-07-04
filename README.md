@@ -54,7 +54,6 @@ Support ongoing development: [Buy Me a Coffee](https://buymeacoffee.com/webeworx
 - streamed, clause-aware TTS chunking on top of macOS `say`
 - offline PDF-to-audiobook export for text-based PDFs, with optional local portable conversion
 - rich terminal observability for mode, wake, latency, memory, and action flow
-- thin native macOS SwiftUI desktop-shell preview under `macos_app/`
 
 ## Quick Start
 
@@ -132,19 +131,6 @@ source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements-dev.txt
 ```
-
-## Desktop Shell Preview
-
-Stage 2 of the desktop-app roadmap adds a thin native SwiftUI shell under `macos_app/`.
-
-Current preview scope:
-
-- launches the local Python backend service
-- starts text mode through the new local API
-- renders transcript, streamed response, diagnostics, and settings
-- keeps the current Python backend as the source of truth
-
-See [macos_app/README.md](./macos_app/README.md) for the preview structure and local validation notes.
 
 ## How Lulu Works
 
@@ -311,20 +297,14 @@ Microphone
   -> AudioHandler
      -> wake preprocessing + acoustic scoring
      -> mlx-whisper transcription when needed
-  -> RuntimeController
-     -> runtime state and event emission
   -> HybridRouter
      -> explicit save path or chat/tool path
   -> MemoryManager
      -> ChromaDB recall and upsert
   -> MacOSTTS
      -> streamed speech chunks
-  -> backend_service
-     -> local authenticated HTTP + WebSocket boundary
   -> TerminalUI
      -> live observability
-  -> macos_app
-     -> thin SwiftUI shell for text-first desktop interaction
 ```
 
 ## Repository Structure
@@ -340,9 +320,7 @@ Microphone
 ├── ROADMAP.md
 ├── SECURITY.md
 ├── SUPPORT.md
-├── app_core/
 ├── audio_handler.py
-├── backend_service/
 ├── config.py
 ├── docs/
 │   ├── README.md
@@ -354,7 +332,6 @@ Microphone
 │   └── wake-performance-report.md
 ├── llm_router.py
 ├── main.py
-├── macos_app/
 ├── memory_manager.py
 ├── ollama_client.py
 ├── pdf_audiobook.py
