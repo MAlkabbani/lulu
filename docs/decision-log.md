@@ -521,3 +521,68 @@ This approach preserves the local stack, adds a low-latency acoustic stage befor
 - `wake_detection.py`
 - `wake_benchmark.py`
 - `tests/test_wake_benchmark.py`
+
+---
+
+## D-009 Extract A Reusable Runtime Core And Local Service Boundary
+
+- Decision ID: `D-009`
+- Title: Prepare The Python Backend For A Native macOS App Through Extraction And Local IPC
+- Status: Accepted and in progress
+- Date: 2026-07-02
+- Last Updated: 2026-07-02
+
+### Context
+
+Lulu's current runtime was originally optimized for the terminal dashboard and repo-local shell scripts. The macOS desktop app direction requires a stable backend that can be reused by both the existing CLI and a future native GUI without rewriting the core assistant logic in another stack.
+
+### Stakeholders / Review Participants
+
+- Product sponsor / repository owner
+- Implementation authoring agent
+
+### Options Considered
+
+1. Keep `main.py` as the only runtime surface and let the future GUI reimplement orchestration around it
+2. Extract a reusable backend core and expose it through a loopback-only authenticated local service
+3. Rewrite the backend in a GUI-native stack before packaging
+
+### Decision
+
+Adopt a staged migration path that:
+
+- extracts runtime orchestration into reusable backend-owned modules under `app_core/`
+- keeps the current CLI path working through `main.py`
+- adds an authenticated loopback-only HTTP and WebSocket service under `backend_service/`
+- preserves Python ownership of wake, memory, router, Ollama, and TTS behavior
+
+### Rationale
+
+This path preserves the current product guarantees while creating a stable seam for a future SwiftUI shell. It reduces the chance that the GUI will fork backend logic, keeps observability grounded in backend-emitted events, and avoids a risky rewrite away from the repo's Python-first architecture.
+
+### Tradeoffs
+
+- Benefits:
+  - preserves current runtime behavior while enabling desktop packaging work
+  - gives both the CLI and future GUI a shared backend authority
+  - keeps the service boundary local, authenticated, and testable
+- Costs:
+  - adds FastAPI and Uvicorn to the dependency surface
+  - introduces another execution mode to document and maintain
+  - requires continued discipline so the terminal UI remains a consumer, not a second runtime owner
+
+### Revision History
+
+| Date | Change |
+| --- | --- |
+| 2026-07-02 | Initial entry recorded during Stage 0 and Stage 1 desktop migration work |
+
+### Evidence
+
+- `.trae/documents/macos-desktop-app-staged-implementation-plan.md`
+- `app_core/`
+- `backend_service/`
+- `main.py`
+- `tests/test_runtime_controller.py`
+- `tests/test_backend_service.py`
+- `tests/test_pdf_audiobook_service_contract.py`

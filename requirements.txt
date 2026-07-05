@@ -1,4 +1,5 @@
 chromadb>=0.5.5
+fastapi>=0.115.0
 mlx>=0.29.0
 mlx-whisper>=0.4.2
 numpy>=1.26.4
@@ -6,3 +7,4 @@ pypdf>=5.7.0
 requests>=2.32.0
 rich>=13.9.0
 sounddevice>=0.4.7
+uvicorn[standard]>=0.30.0

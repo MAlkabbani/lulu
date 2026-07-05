@@ -24,3 +24,5 @@ chroma/
 .vscode/
 .trae/
 outputs/audiobooks/
+macos_app/.build/
+macos_app/.swiftpm/

@@ -14,6 +14,7 @@ import wave
 
 import numpy as np
 import sounddevice as sd
+from huggingface_hub import snapshot_download
 from mlx_whisper import transcribe
 
 from config import Settings
@@ -276,6 +277,9 @@ class AudioHandler:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._wake_engine = WakeWordEngine(settings)
+        self._whisper_model_lock = threading.Lock()
+        self._whisper_model_path: str | None = None
+        self._whisper_ready = False
 
     def record_until_silence(self) -> np.ndarray | None:
         return self._record_until_silence(
@@ -292,6 +296,25 @@ class AudioHandler:
             silence_seconds=self.settings.wake_scan_silence_seconds,
             pre_roll_chunks=self.settings.wake_scan_pre_roll_chunks,
         )
+
+    def ensure_transcription_ready(self) -> None:
+        with self._whisper_model_lock:
+            if self._whisper_ready:
+                return
+
+        model_reference = self._resolve_whisper_model_reference()
+        silent_audio = np.zeros(self.settings.sample_rate, dtype=np.float32)
+        try:
+            transcribe(
+                silent_audio,
+                path_or_hf_repo=model_reference,
+                language=self.settings.whisper_language,
+            )
+        except Exception as exc:
+            raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
+
+        with self._whisper_model_lock:
+            self._whisper_ready = True
 
     def _record_until_silence(
         self,
@@ -356,21 +379,22 @@ class AudioHandler:
 
     def transcribe_audio(self, audio: np.ndarray) -> str:
         wav_path = self._write_temp_wav(audio)
+        model_reference = self._resolve_whisper_model_reference()
         try:
             try:
                 result = transcribe(
                     str(wav_path),
-                    path_or_hf_repo=self.settings.whisper_model,
+                    path_or_hf_repo=model_reference,
                     language=self.settings.whisper_language,
                 )
             except Exception as exc:
-                raise AudioTranscriptionError(
-                    "Local Whisper transcription failed. Check the configured model and local MLX runtime."
-                ) from exc
+                raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
         finally:
             wav_path.unlink(missing_ok=True)
 
         text = (result.get("text") or "").strip()
+        with self._whisper_model_lock:
+            self._whisper_ready = True
         return text
 
     def listen_and_transcribe(self) -> str:
@@ -452,13 +476,49 @@ class AudioHandler:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             wav_path = Path(tmp.name)
 
-        pcm16 = (audio * 32767).astype(np.int16)
+        pcm_source = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if pcm_source.size == 0:
+            pcm_source = np.zeros(1, dtype=np.float32)
+        pcm_source = np.nan_to_num(pcm_source, nan=0.0, posinf=1.0, neginf=-1.0)
+        pcm_source = np.clip(pcm_source, -1.0, 1.0)
+
+        pcm16 = (pcm_source * 32767).astype(np.int16)
         with wave.open(str(wav_path), "wb") as wav_file:
             wav_file.setnchannels(self.settings.channels)
             wav_file.setsampwidth(2)
             wav_file.setframerate(self.settings.sample_rate)
             wav_file.writeframes(pcm16.tobytes())
         return wav_path
+
+    def _resolve_whisper_model_reference(self) -> str:
+        configured = Path(self.settings.whisper_model).expanduser()
+        if configured.exists():
+            return str(configured)
+
+        with self._whisper_model_lock:
+            if self._whisper_model_path and Path(self._whisper_model_path).exists():
+                return self._whisper_model_path
+
+            try:
+                resolved_path = snapshot_download(
+                    repo_id=self.settings.whisper_model,
+                    local_files_only=True,
+                )
+            except Exception:
+                try:
+                    resolved_path = snapshot_download(repo_id=self.settings.whisper_model)
+                except Exception as exc:
+                    raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
+
+            self._whisper_model_path = resolved_path
+            return resolved_path
+
+    def _format_transcription_error(self, exc: Exception) -> str:
+        detail = str(exc).strip() or type(exc).__name__
+        return (
+            "Local Whisper transcription failed. "
+            f"Model: {self.settings.whisper_model}. Detail: {detail}"
+        )
 
 
 def normalize_text(text: str) -> str:
