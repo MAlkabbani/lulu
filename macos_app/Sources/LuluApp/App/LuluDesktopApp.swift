@@ -17,6 +17,7 @@ struct LuluDesktopApp: App {
                     }
                 }
         }
+        .defaultSize(width: 1120, height: 860)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("Refresh Diagnostics") {
@@ -33,4 +34,3 @@ struct LuluDesktopApp: App {
         }
     }
 }
-
