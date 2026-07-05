@@ -5,136 +5,137 @@ struct AssistantView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Label(model.backendHealthy ? "Backend Ready" : "Backend Unavailable", systemImage: model.backendHealthy ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(model.backendHealthy ? .green : .orange)
-                Spacer()
-                badge(text: model.runtimeState?.runtimeMode.capitalized ?? "Booting", color: .blue)
-                badge(text: (model.runtimeState?.mode ?? "starting").replacingOccurrences(of: "_", with: " ").capitalized, color: phaseColor)
-            }
-
-            Text(model.connectionStatus)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 10) {
-                if let remaining = model.conversationWindowRemaining {
-                    badge(text: String(format: "Window %.1fs", remaining), color: .cyan)
-                }
-                if let remaining = model.cooldownRemaining {
-                    badge(text: String(format: "Cooldown %.1fs", remaining), color: .orange)
-                }
-                badge(text: "Wake \(String(format: "%.2f", model.wakeAttempt.score))", color: model.wakeAttempt.accepted ? .green : .purple)
-            }
-
-            GroupBox("Voice Controls") {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Button("Text Mode") {
-                            Task { await model.startTextMode() }
-                        }
-                        Button("Continuous Voice") {
-                            Task { await model.startContinuousVoiceMode() }
-                        }
-                        Button("Turn-Based Voice") {
-                            Task { await model.startTurnBasedVoiceMode() }
-                        }
-                        Button("Stop Runtime") {
-                            Task { await model.stopRuntime() }
-                        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center) {
+                        statusLabel
+                        Spacer(minLength: 12)
+                        statusBadges
                     }
-                    .buttonStyle(.borderedProminent)
-
-                    HStack {
-                        badge(
-                            text: "Mic \(model.voicePreflight.microphoneStatus.replacingOccurrences(of: "_", with: " ").capitalized)",
-                            color: microphoneBadgeColor
-                        )
-                        badge(
-                            text: model.voicePreflight.backendAudioInputAvailable ? "Backend Audio Ready" : "Backend Audio Missing",
-                            color: model.voicePreflight.backendAudioInputAvailable ? .green : .red
-                        )
-                        badge(
-                            text: model.voicePreflight.ttsAvailable ? "TTS Ready" : "TTS Missing",
-                            color: model.voicePreflight.ttsAvailable ? .green : .red
-                        )
+                    VStack(alignment: .leading, spacing: 10) {
+                        statusLabel
+                        statusBadges
                     }
-
-                    HStack {
-                        Button("Request Microphone Access") {
-                            Task { await model.requestMicrophoneAccess() }
-                        }
-                        Button("Open Privacy Settings") {
-                            model.openPrivacySettings()
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    Text(model.voicePreflight.guidance)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-
-                    Text(model.wakeGuidance)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-
-                    HStack {
-                        Text("Wake decision: \(model.wakeAttempt.decision)")
-                        Spacer()
-                        Text("Accepted \(model.wakeAttempt.acceptedCount) / Rejected \(model.wakeAttempt.rejectedCount)")
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.caption)
                 }
-            }
 
-            GroupBox("Transcript") {
-                ScrollView {
-                    Text(model.transcript.isEmpty ? "Transcript events will appear here." : model.transcript)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(minHeight: 120)
-            }
+                Text(model.connectionStatus)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
-            GroupBox("Assistant Response") {
-                ScrollView {
-                    Text(model.response.isEmpty ? "Streamed backend responses will appear here." : model.response)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(minHeight: 180)
-            }
-
-            GroupBox("Send A Text Turn") {
-                VStack(alignment: .leading, spacing: 12) {
-                    ZStack(alignment: .topLeading) {
-                        TextTurnEditor(text: $model.composeText)
-                            .frame(minHeight: 120)
-
-                        if model.composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text("Type a message to Lulu...")
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
-                                .allowsHitTesting(false)
-                        }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        conversationBadges
                     }
-                    HStack {
-                        Spacer()
-                        Button(model.isSubmitting ? "Submitting..." : "Send To Lulu") {
-                            Task {
-                                await model.submitTextTurn()
+                    VStack(alignment: .leading, spacing: 8) {
+                        conversationBadges
+                    }
+                }
+
+                GroupBox("Voice Controls") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 10) {
+                                runtimeButtons
+                            }
+                            VStack(alignment: .leading, spacing: 10) {
+                                runtimeButtons
                             }
                         }
-                        .keyboardShortcut(.return, modifiers: [.command])
-                        .disabled(model.composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isSubmitting)
+                        .buttonStyle(.borderedProminent)
+
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 10) {
+                                voiceReadinessBadges
+                            }
+                            VStack(alignment: .leading, spacing: 8) {
+                                voiceReadinessBadges
+                            }
+                        }
+
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 10) {
+                                microphoneButtons
+                            }
+                            VStack(alignment: .leading, spacing: 10) {
+                                microphoneButtons
+                            }
+                        }
+
+                        Text(model.voicePreflight.guidance)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+
+                        Text(model.wakeGuidance)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+
+                        ViewThatFits(in: .horizontal) {
+                            HStack {
+                                Text("Wake decision: \(model.wakeAttempt.decision)")
+                                Spacer(minLength: 12)
+                                Text("Accepted \(model.wakeAttempt.acceptedCount) / Rejected \(model.wakeAttempt.rejectedCount)")
+                                    .foregroundStyle(.secondary)
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Wake decision: \(model.wakeAttempt.decision)")
+                                Text("Accepted \(model.wakeAttempt.acceptedCount) / Rejected \(model.wakeAttempt.rejectedCount)")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .font(.caption)
+                    }
+                }
+
+                GroupBox("Transcript") {
+                    ScrollView {
+                        Text(model.transcript.isEmpty ? "Transcript events will appear here." : model.transcript)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(minHeight: 120)
+                }
+
+                GroupBox("Assistant Response") {
+                    ScrollView {
+                        Text(model.response.isEmpty ? "Streamed backend responses will appear here." : model.response)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(minHeight: 180)
+                }
+
+                GroupBox("Send A Text Turn") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ZStack(alignment: .topLeading) {
+                            TextTurnEditor(text: $model.composeText)
+                                .frame(minHeight: 120)
+
+                            if model.composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text("Type a message to Lulu...")
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 12)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        HStack {
+                            Spacer()
+                            Button(model.isSubmitting ? "Submitting..." : "Send To Lulu") {
+                                Task {
+                                    await model.submitTextTurn()
+                                }
+                            }
+                            .keyboardShortcut(.return, modifiers: [.command])
+                            .disabled(model.composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isSubmitting)
+                        }
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
         }
-        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var phaseColor: Color {
@@ -148,6 +149,72 @@ struct AssistantView: View {
         default:
             return .secondary
         }
+    }
+
+    @ViewBuilder
+    private var statusLabel: some View {
+        Label(model.backendHealthy ? "Backend Ready" : "Backend Unavailable", systemImage: model.backendHealthy ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            .foregroundStyle(model.backendHealthy ? .green : .orange)
+    }
+
+    @ViewBuilder
+    private var statusBadges: some View {
+        badge(text: model.runtimeState?.runtimeMode.capitalized ?? "Booting", color: .blue)
+        badge(text: (model.runtimeState?.mode ?? "starting").replacingOccurrences(of: "_", with: " ").capitalized, color: phaseColor)
+    }
+
+    @ViewBuilder
+    private var conversationBadges: some View {
+        if let remaining = model.conversationWindowRemaining {
+            badge(text: String(format: "Window %.1fs", remaining), color: .cyan)
+        }
+        if let remaining = model.cooldownRemaining {
+            badge(text: String(format: "Cooldown %.1fs", remaining), color: .orange)
+        }
+        badge(text: "Wake \(String(format: "%.2f", model.wakeAttempt.score))", color: model.wakeAttempt.accepted ? .green : .purple)
+    }
+
+    @ViewBuilder
+    private var runtimeButtons: some View {
+        Button("Text Mode") {
+            Task { await model.startTextMode() }
+        }
+        Button("Continuous Voice") {
+            Task { await model.startContinuousVoiceMode() }
+        }
+        Button("Turn-Based Voice") {
+            Task { await model.startTurnBasedVoiceMode() }
+        }
+        Button("Stop Runtime") {
+            Task { await model.stopRuntime() }
+        }
+    }
+
+    @ViewBuilder
+    private var voiceReadinessBadges: some View {
+        badge(
+            text: "Mic \(model.voicePreflight.microphoneStatus.replacingOccurrences(of: "_", with: " ").capitalized)",
+            color: microphoneBadgeColor
+        )
+        badge(
+            text: model.voicePreflight.backendAudioInputAvailable ? "Backend Audio Ready" : "Backend Audio Missing",
+            color: model.voicePreflight.backendAudioInputAvailable ? .green : .red
+        )
+        badge(
+            text: model.voicePreflight.ttsAvailable ? "TTS Ready" : "TTS Missing",
+            color: model.voicePreflight.ttsAvailable ? .green : .red
+        )
+    }
+
+    @ViewBuilder
+    private var microphoneButtons: some View {
+        Button("Request Microphone Access") {
+            Task { await model.requestMicrophoneAccess() }
+        }
+        Button("Open Privacy Settings") {
+            model.openPrivacySettings()
+        }
+        .buttonStyle(.bordered)
     }
 
     private func badge(text: String, color: Color) -> some View {
