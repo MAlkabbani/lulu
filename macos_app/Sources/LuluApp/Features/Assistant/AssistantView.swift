@@ -1,8 +1,8 @@
+import AppKit
 import SwiftUI
 
 struct AssistantView: View {
     @ObservedObject var model: AppModel
-    @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -109,21 +109,23 @@ struct AssistantView: View {
 
             GroupBox("Send A Text Turn") {
                 VStack(alignment: .leading, spacing: 12) {
-                    TextField(
-                        "Type a message to Lulu...",
-                        text: $model.composeText,
-                        axis: .vertical
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(4...8)
-                    .font(.body)
-                    .focused($composerFocused)
+                    ZStack(alignment: .topLeading) {
+                        TextTurnEditor(text: $model.composeText)
+                            .frame(minHeight: 120)
+
+                        if model.composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text("Type a message to Lulu...")
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     HStack {
                         Spacer()
                         Button(model.isSubmitting ? "Submitting..." : "Send To Lulu") {
                             Task {
                                 await model.submitTextTurn()
-                                composerFocused = true
                             }
                         }
                         .keyboardShortcut(.return, modifiers: [.command])
@@ -133,9 +135,6 @@ struct AssistantView: View {
             }
         }
         .padding(20)
-        .onAppear {
-            composerFocused = true
-        }
     }
 
     private var phaseColor: Color {
@@ -170,6 +169,68 @@ struct AssistantView: View {
             return .orange
         default:
             return .secondary
+        }
+    }
+}
+
+private struct TextTurnEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.borderType = .bezelBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.backgroundColor = .textBackgroundColor
+        textView.textContainerInset = NSSize(width: 8, height: 10)
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.string = text
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = context.coordinator.textView else {
+            return
+        }
+        if textView.string != text {
+            textView.string = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+        weak var textView: NSTextView?
+
+        init(text: Binding<String>) {
+            self._text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView else {
+                return
+            }
+            text = textView.string
         }
     }
 }

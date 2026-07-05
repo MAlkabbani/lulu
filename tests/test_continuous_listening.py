@@ -50,8 +50,10 @@ def test_match_wake_phrase_accepts_bare_phrase() -> None:
     assert result.score >= 0.99
 
 
-def test_transcribe_audio_uses_configured_whisper_language(monkeypatch) -> None:
+def test_transcribe_audio_uses_configured_whisper_language(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
+    fake_model_dir = tmp_path / "fake-whisper-model"
+    fake_model_dir.mkdir()
 
     def fake_transcribe(path: str, path_or_hf_repo: str, language: str) -> dict[str, str]:
         captured["path"] = path
@@ -60,13 +62,13 @@ def test_transcribe_audio_uses_configured_whisper_language(monkeypatch) -> None:
         return {"text": "hey lulu"}
 
     monkeypatch.setattr("audio_handler.transcribe", fake_transcribe)
-    settings = build_settings()
+    settings = Settings(**(build_settings().__dict__ | {"whisper_model": str(fake_model_dir)}))
     handler = AudioHandler(settings)
 
     transcript = handler.transcribe_audio(np.zeros(160, dtype=np.float32))
 
     assert transcript == "hey lulu"
-    assert captured["model"] == settings.whisper_model
+    assert captured["model"] == str(fake_model_dir)
     assert captured["language"] == settings.whisper_language
     assert Path(str(captured["path"])).suffix == ".wav"
 

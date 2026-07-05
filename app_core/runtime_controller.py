@@ -164,11 +164,15 @@ class RuntimeController:
             self.snapshot = self.get_state()
             return self.snapshot
         self._stop_background_runtime()
-        self.set_runtime_mode(mode)
         if mode == "text":
+            self.set_runtime_mode(mode)
             set_ui_mode(self.ui, "ready", "Runtime started in text mode.", event_bus=self.event_bus)
             self.snapshot = self.get_state()
             return self.snapshot
+        if not self._ensure_voice_runtime_ready():
+            self.snapshot = self.get_state()
+            return self.snapshot
+        self.set_runtime_mode(mode)
         self._start_background_runtime(mode)
         self.snapshot = self.get_state()
         return self.snapshot
@@ -224,6 +228,22 @@ class RuntimeController:
             worker.join(timeout=1.0)
         self._runtime_stop_event = None
         self._runtime_thread = None
+
+    def _ensure_voice_runtime_ready(self) -> bool:
+        try:
+            self.audio_handler.ensure_transcription_ready()
+        except AudioTranscriptionError as exc:
+            self.set_runtime_mode("text")
+            handle_dependency_failure(
+                self.ui,
+                "stt_error",
+                "Voice runtime preflight failed",
+                exc,
+                recoverable=False,
+                event_bus=self.event_bus,
+            )
+            return False
+        return True
 
     def _run_background_runtime(self, mode: str, stop_event: threading.Event) -> None:
         try:

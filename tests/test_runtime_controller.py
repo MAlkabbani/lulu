@@ -46,6 +46,9 @@ class FakeAudioHandler:
     def record_wake_scan(self):  # noqa: ANN201
         return None
 
+    def ensure_transcription_ready(self) -> None:
+        return None
+
 
 class FakeTTS:
     def __init__(self) -> None:
@@ -186,3 +189,27 @@ def test_runtime_controller_starts_and_stops_continuous_background_runtime(monke
 
     assert stopped.wait(1.0) is True
     assert stopped_state.mode == "idle"
+
+
+def test_runtime_controller_blocks_voice_start_when_transcription_preflight_fails() -> None:
+    class BrokenAudioHandler(FakeAudioHandler):
+        def ensure_transcription_ready(self) -> None:
+            raise runtime_controller_module.AudioTranscriptionError("mlx model load failed")
+
+    settings = Settings()
+    ui = TerminalUI(settings)
+    controller = RuntimeController(
+        settings,
+        ollama_client=FakeOllama(),
+        memory_manager=FakeMemoryManager(),  # type: ignore[arg-type]
+        router=FixedRouter(),  # type: ignore[arg-type]
+        audio_handler=BrokenAudioHandler(),  # type: ignore[arg-type]
+        tts=FakeTTS(),  # type: ignore[arg-type]
+        ui=ui,
+    )
+
+    state = controller.start_runtime("continuous")
+
+    assert state.mode == "startup_error"
+    assert state.runtime_mode == "text"
+    assert "Voice runtime preflight failed" in state.last_error
