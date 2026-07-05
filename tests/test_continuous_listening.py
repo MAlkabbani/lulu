@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from pathlib import Path
+import threading
 import numpy as np
 
 from audio_handler import (
@@ -71,6 +72,48 @@ def test_transcribe_audio_uses_configured_whisper_language(monkeypatch, tmp_path
     assert captured["model"] == str(fake_model_dir)
     assert captured["language"] == settings.whisper_language
     assert Path(str(captured["path"])).suffix == ".wav"
+
+
+def test_ensure_transcription_ready_runs_single_warmup_across_threads(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fake_model_dir = tmp_path / "fake-whisper-model"
+    fake_model_dir.mkdir()
+    handler = AudioHandler(Settings(whisper_model=str(fake_model_dir)))
+    started = threading.Event()
+    release = threading.Event()
+    call_count = 0
+    call_count_lock = threading.Lock()
+    errors: list[Exception] = []
+
+    def fake_transcribe(audio, path_or_hf_repo: str, language: str):  # noqa: ANN001
+        nonlocal call_count
+        with call_count_lock:
+            call_count += 1
+        started.set()
+        release.wait(timeout=1.0)
+        return {"text": ""}
+
+    monkeypatch.setattr("audio_handler.transcribe", fake_transcribe)
+
+    def worker() -> None:
+        try:
+            handler.ensure_transcription_ready()
+        except Exception as exc:  # pragma: no cover - test should not hit this path
+            errors.append(exc)
+
+    first = threading.Thread(target=worker)
+    second = threading.Thread(target=worker)
+    first.start()
+    assert started.wait(timeout=1.0) is True
+    second.start()
+    release.set()
+    first.join(timeout=1.0)
+    second.join(timeout=1.0)
+
+    assert errors == []
+    assert call_count == 1
 
 
 def test_match_wake_phrase_extracts_inline_request() -> None:
