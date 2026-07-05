@@ -277,7 +277,7 @@ class AudioHandler:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._wake_engine = WakeWordEngine(settings)
-        self._whisper_model_lock = threading.Lock()
+        self._whisper_model_lock = threading.RLock()
         self._whisper_model_path: str | None = None
         self._whisper_ready = False
 
@@ -301,19 +301,16 @@ class AudioHandler:
         with self._whisper_model_lock:
             if self._whisper_ready:
                 return
-
-        model_reference = self._resolve_whisper_model_reference()
-        silent_audio = np.zeros(self.settings.sample_rate, dtype=np.float32)
-        try:
-            transcribe(
-                silent_audio,
-                path_or_hf_repo=model_reference,
-                language=self.settings.whisper_language,
-            )
-        except Exception as exc:
-            raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
-
-        with self._whisper_model_lock:
+            model_reference = self._resolve_whisper_model_reference()
+            silent_audio = np.zeros(self.settings.sample_rate, dtype=np.float32)
+            try:
+                transcribe(
+                    silent_audio,
+                    path_or_hf_repo=model_reference,
+                    language=self.settings.whisper_language,
+                )
+            except Exception as exc:
+                raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
             self._whisper_ready = True
 
     def _record_until_silence(
