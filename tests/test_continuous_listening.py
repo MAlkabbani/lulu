@@ -13,6 +13,7 @@ from audio_handler import (
     _resolve_input_device,
     text_similarity,
 )
+from app_core.runtime_controller import run_continuous_voice_loop
 from config import Settings
 from main import (
     _bootstrap_connection,
@@ -28,6 +29,7 @@ from main import (
 )
 from ollama_client import OllamaClientError
 from terminal_ui import TerminalUI
+from wake_detection import WakeAudioAnalysis
 
 
 def build_settings() -> Settings:
@@ -56,8 +58,8 @@ def test_transcribe_audio_uses_configured_whisper_language(monkeypatch, tmp_path
     fake_model_dir = tmp_path / "fake-whisper-model"
     fake_model_dir.mkdir()
 
-    def fake_transcribe(path: str, path_or_hf_repo: str, language: str) -> dict[str, str]:
-        captured["path"] = path
+    def fake_transcribe(audio, path_or_hf_repo: str, language: str) -> dict[str, str]:  # noqa: ANN001
+        captured["audio"] = audio
         captured["model"] = path_or_hf_repo
         captured["language"] = language
         return {"text": "hey lulu"}
@@ -71,7 +73,31 @@ def test_transcribe_audio_uses_configured_whisper_language(monkeypatch, tmp_path
     assert transcript == "hey lulu"
     assert captured["model"] == str(fake_model_dir)
     assert captured["language"] == settings.whisper_language
-    assert Path(str(captured["path"])).suffix == ".wav"
+    assert isinstance(captured["audio"], np.ndarray)
+    assert captured["audio"].shape == (160,)
+
+
+def test_transcribe_audio_sanitizes_audio_before_whisper(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    fake_model_dir = tmp_path / "fake-whisper-model"
+    fake_model_dir.mkdir()
+
+    def fake_transcribe(audio, path_or_hf_repo: str, language: str) -> dict[str, str]:  # noqa: ANN001
+        captured["audio"] = audio
+        captured["model"] = path_or_hf_repo
+        captured["language"] = language
+        return {"text": "sanitized"}
+
+    monkeypatch.setattr("audio_handler.transcribe", fake_transcribe)
+    handler = AudioHandler(Settings(whisper_model=str(fake_model_dir)))
+
+    transcript = handler.transcribe_audio(np.array([np.nan, np.inf, -np.inf, 1.5, -1.5], dtype=np.float32))
+
+    assert transcript == "sanitized"
+    assert np.array_equal(
+        captured["audio"],
+        np.array([0.0, 1.0, -1.0, 1.0, -1.0], dtype=np.float32),
+    )
 
 
 def test_ensure_transcription_ready_runs_single_warmup_across_threads(
@@ -329,6 +355,68 @@ def test_settings_practical_voice_mode_relaxes_wake_defaults() -> None:
     assert settings.wake_scan_pre_roll_chunks >= 8
     assert settings.conversation_window_seconds >= 14.0
     assert settings.wake_match_score_threshold <= 0.84
+
+
+def test_practical_voice_mode_keeps_wake_scan_in_stt_path_when_acoustic_gate_is_low(
+    monkeypatch,
+) -> None:
+    settings = Settings(practical_voice_mode=True)
+    ui = TerminalUI(settings)
+    audio = np.ones(160, dtype=np.float32)
+    processed_audio = np.full(160, 0.5, dtype=np.float32)
+    transcribed_audio: list[np.ndarray] = []
+
+    class PracticalAudioHandler:
+        def ensure_transcription_ready(self) -> None:
+            return None
+
+        def record_wake_scan(self):  # noqa: ANN201
+            return audio
+
+        def analyze_wake_audio(self, wake_audio: np.ndarray) -> WakeAudioAnalysis:
+            assert np.array_equal(wake_audio, audio)
+            return WakeAudioAnalysis(
+                processed_audio=processed_audio,
+                acoustic_score=0.30,
+                dtw_score=0.28,
+                confidence=0.31,
+                dynamic_threshold=0.53,
+                duration_seconds=0.45,
+                snr_db=12.0,
+                voiced_ratio=0.6,
+                syllable_peaks=2,
+                spectral_centroid_mean=210.0,
+                zero_crossing_rate_mean=0.08,
+                feature_frames=18,
+                candidate=False,
+                fast_path_eligible=False,
+                reason="acoustic-reject",
+                latency_ms=8.0,
+            )
+
+        def transcribe_audio(self, wake_audio: np.ndarray) -> str:
+            transcribed_audio.append(wake_audio.copy())
+            stop_event.set()
+            return ""
+
+    monkeypatch.setattr("app_core.runtime_controller.capture_audio", lambda capture_fn, ui, event_bus=None: (capture_fn(), False))
+
+    stop_event = threading.Event()
+
+    run_continuous_voice_loop(
+        settings,
+        PracticalAudioHandler(),  # type: ignore[arg-type]
+        router=None,  # type: ignore[arg-type]
+        ollama_client=None,  # type: ignore[arg-type]
+        tts=None,  # type: ignore[arg-type]
+        ui=ui,
+        recent_spoken_chunks=deque(),
+        stop_event=stop_event,
+    )
+
+    assert len(transcribed_audio) == 1
+    assert np.array_equal(transcribed_audio[0], processed_audio)
+    assert any("practical voice mode kept the STT wake scan enabled" in event for event in ui.state.recent_events)
 
 
 def test_wake_rejection_helpers_offer_practical_guidance() -> None:
