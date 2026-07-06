@@ -1009,7 +1009,9 @@ def transcribe_audio(
 
     stt_start = perf_counter()
     try:
-        transcript = audio_handler.transcribe_audio(audio)
+        settings = getattr(audio_handler, "settings", None)
+        initial_prompt = settings.wake_phrase if wake_scan and settings is not None else None
+        transcript = audio_handler.transcribe_audio(audio, initial_prompt=initial_prompt)
     except AudioTranscriptionError as exc:
         record_latency(ui, "stt", perf_counter() - stt_start, event_bus=event_bus)
         handle_dependency_failure(ui, "stt_error", "Transcription failed", exc, event_bus=event_bus)

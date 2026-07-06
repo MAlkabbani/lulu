@@ -1,9 +1,10 @@
+import AppKit
 import Foundation
 import SwiftUI
 
 struct AssistantView: View {
     @ObservedObject var model: AppModel
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
 
     var body: some View {
         ScrollView {
@@ -108,43 +109,18 @@ struct AssistantView: View {
 
                 GroupBox("Send A Text Turn") {
                     VStack(alignment: .leading, spacing: 12) {
-                        TextEditor(text: $model.composeText)
-                            .focused($composerFocused)
-                            .font(.body)
-                            .scrollContentBackground(.hidden)
-                            .padding(8)
-                            .frame(minHeight: 120, alignment: .topLeading)
-                            .background(Color(nsColor: .textBackgroundColor))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                            )
-                            .overlay(alignment: .topLeading) {
-                                if model.composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    Text("Type a message to Lulu...")
-                                        .foregroundStyle(.secondary)
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 16)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-                            .onTapGesture {
-                                debugReport(
-                                    hypothesisId: "A",
-                                    location: "AssistantView.swift:126",
-                                    message: "composer tapped",
-                                    data: [
-                                        "textLength": model.composeText.count,
-                                        "focused": composerFocused,
-                                    ]
-                                )
-                            }
+                        DesktopComposerField(
+                            text: $model.composeText,
+                            isFocused: $composerFocused,
+                            placeholder: "Type a message to Lulu..."
+                        )
+                        .frame(minHeight: 28)
                         HStack {
                             Spacer()
                             Button(model.isSubmitting ? "Submitting..." : "Send To Lulu") {
                                 debugReport(
                                     hypothesisId: "B",
-                                    location: "AssistantView.swift:138",
+                                    location: "AssistantView.swift:120",
                                     message: "send button tapped",
                                     data: [
                                         "textLength": model.composeText.count,
@@ -171,7 +147,7 @@ struct AssistantView: View {
             composerFocused = true
             debugReport(
                 hypothesisId: "A",
-                location: "AssistantView.swift:157",
+                location: "AssistantView.swift:139",
                 message: "assistant view appeared",
                 data: [
                     "textLength": model.composeText.count,
@@ -182,7 +158,7 @@ struct AssistantView: View {
         .onChange(of: composerFocused) { _, focused in
             debugReport(
                 hypothesisId: "A",
-                location: "AssistantView.swift:167",
+                location: "AssistantView.swift:149",
                 message: "composer focus changed",
                 data: [
                     "focused": focused,
@@ -193,7 +169,7 @@ struct AssistantView: View {
         .onChange(of: model.composeText) { _, text in
             debugReport(
                 hypothesisId: "B",
-                location: "AssistantView.swift:177",
+                location: "AssistantView.swift:159",
                 message: "composer text changed",
                 data: [
                     "textLength": text.count,
@@ -333,4 +309,70 @@ struct AssistantView: View {
         URLSession.shared.dataTask(with: request).resume()
     }
     // #endregion
+}
+
+private struct DesktopComposerField: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    let placeholder: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, isFocused: $isFocused)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField()
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBordered = true
+        field.isBezeled = true
+        field.bezelStyle = .roundedBezel
+        field.focusRingType = .default
+        field.font = .preferredFont(forTextStyle: .body)
+        field.placeholderString = placeholder
+        field.delegate = context.coordinator
+        field.lineBreakMode = .byTruncatingTail
+        context.coordinator.textField = field
+        return field
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        if isFocused {
+            DispatchQueue.main.async {
+                guard let window = nsView.window else {
+                    return
+                }
+                if window.firstResponder !== nsView.currentEditor() {
+                    window.makeFirstResponder(nsView)
+                }
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding private var text: String
+        @Binding private var isFocused: Bool
+        weak var textField: NSTextField?
+
+        init(text: Binding<String>, isFocused: Binding<Bool>) {
+            _text = text
+            _isFocused = isFocused
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            isFocused = true
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            text = textField?.stringValue ?? ""
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            text = textField?.stringValue ?? ""
+            isFocused = false
+        }
+    }
 }
