@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable, Iterator
+import json
 import threading
 from time import perf_counter, sleep
+import urllib.request
 
 from audio_handler import (
     AudioCaptureError,
@@ -22,6 +24,32 @@ from llm_router import HybridRouter
 from memory_manager import MemoryManager
 from ollama_client import OllamaClient, OllamaClientError
 from terminal_ui import TerminalUI
+
+
+# #region debug-point A:desktop-input-wake
+def _debug_emit(hypothesis_id: str, location: str, msg: str, data: dict[str, object] | None = None) -> None:
+    payload = {
+        "sessionId": "desktop-input-wake",
+        "runId": "pre-fix",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "msg": f"[DEBUG] {msg}",
+        "data": data or {},
+    }
+    try:
+        urllib.request.urlopen(  # noqa: S310
+            urllib.request.Request(
+                "http://127.0.0.1:7777/event",
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=0.2,
+        ).read()
+    except Exception:
+        return
+
+
+# #endregion
 
 
 class RuntimeController:
@@ -676,6 +704,18 @@ def run_continuous_voice_loop(
         )
         set_wake_guidance(ui, build_wake_guidance(settings), event_bus=event_bus)
         audio, capture_failed = capture_audio(audio_handler.record_wake_scan, ui, event_bus=event_bus)
+        # #region debug-point C:wake-capture
+        _debug_emit(
+            "C",
+            "app_core/runtime_controller.py:706",
+            "wake scan capture result",
+            {
+                "capture_failed": capture_failed,
+                "audio_is_none": audio is None,
+                "audio_len": 0 if audio is None else int(len(audio)),
+            },
+        )
+        # #endregion
         if capture_failed:
             sleep(0.2)
             continue
@@ -683,6 +723,23 @@ def run_continuous_voice_loop(
             continue
 
         wake_analysis = audio_handler.analyze_wake_audio(audio)
+        # #region debug-point D:wake-analysis
+        _debug_emit(
+            "D",
+            "app_core/runtime_controller.py:724",
+            "wake analysis complete",
+            {
+                "candidate": wake_analysis.candidate,
+                "fast_path_eligible": wake_analysis.fast_path_eligible,
+                "confidence": round(wake_analysis.confidence, 4),
+                "threshold": round(wake_analysis.dynamic_threshold, 4),
+                "acoustic_score": round(wake_analysis.acoustic_score, 4),
+                "dtw_score": round(wake_analysis.dtw_score, 4),
+                "reason": wake_analysis.reason,
+                "feature_frames": wake_analysis.feature_frames,
+            },
+        )
+        # #endregion
         record_latency(ui, "wake_audio", wake_analysis.latency_ms / 1000.0, event_bus=event_bus)
         set_wake_signal_metrics(
             ui,
@@ -694,7 +751,8 @@ def run_continuous_voice_loop(
             feature_frames=wake_analysis.feature_frames,
             event_bus=event_bus,
         )
-        if not wake_analysis.candidate:
+        should_transcribe_wake_scan = wake_analysis.candidate or settings.practical_voice_mode
+        if not should_transcribe_wake_scan:
             record_wake_attempt(
                 ui,
                 transcript="(acoustic prefilter rejected)",
@@ -713,6 +771,15 @@ def run_continuous_voice_loop(
                 f"Rejected wake attempt acoustically before STT (confidence {wake_analysis.confidence:.2f})."
             )
             continue
+        if not wake_analysis.candidate and settings.practical_voice_mode:
+            ui.log_event(
+                "Acoustic wake confidence was low, but practical voice mode kept the STT wake scan enabled."
+            )
+            set_wake_guidance(
+                ui,
+                "Wake scan stayed in transcript mode because practical voice mode is enabled.",
+                event_bus=event_bus,
+            )
 
         if wake_analysis.fast_path_eligible and not recent_assistant_audio_guard_active(
             last_assistant_reply_at=last_assistant_reply_at,
@@ -756,6 +823,17 @@ def run_continuous_voice_loop(
             wake_scan=True,
             event_bus=event_bus,
         )
+        # #region debug-point E:wake-transcript
+        _debug_emit(
+            "E",
+            "app_core/runtime_controller.py:794",
+            "wake transcription result",
+            {
+                "transcript_len": len(transcript),
+                "transcript_preview": transcript[:80],
+            },
+        )
+        # #endregion
         if not transcript:
             ui.set_response("Wake scan produced no transcript. Listening again...")
             set_wake_guidance(
@@ -766,6 +844,20 @@ def run_continuous_voice_loop(
             continue
 
         wake_match = audio_handler.match_wake_phrase(transcript, analysis=wake_analysis)
+        # #region debug-point F:wake-match
+        _debug_emit(
+            "F",
+            "app_core/runtime_controller.py:810",
+            "wake match result",
+            {
+                "matched": wake_match.matched,
+                "score": round(wake_match.score, 4),
+                "reason": wake_match.reason,
+                "matched_prefix": wake_match.matched_prefix,
+                "remainder_len": len(wake_match.remainder),
+            },
+        )
+        # #endregion
         if should_suppress_self_audio_echo(
             transcript=transcript,
             last_assistant_reply=last_assistant_reply,

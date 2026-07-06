@@ -1,8 +1,9 @@
-import AppKit
+import Foundation
 import SwiftUI
 
 struct AssistantView: View {
     @ObservedObject var model: AppModel
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -107,23 +108,53 @@ struct AssistantView: View {
 
                 GroupBox("Send A Text Turn") {
                     VStack(alignment: .leading, spacing: 12) {
-                        ZStack(alignment: .topLeading) {
-                            TextTurnEditor(text: $model.composeText)
-                                .frame(minHeight: 120)
-
-                            if model.composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text("Type a message to Lulu...")
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 12)
-                                    .allowsHitTesting(false)
+                        TextEditor(text: $model.composeText)
+                            .focused($composerFocused)
+                            .font(.body)
+                            .scrollContentBackground(.hidden)
+                            .padding(8)
+                            .frame(minHeight: 120, alignment: .topLeading)
+                            .background(Color(nsColor: .textBackgroundColor))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                            )
+                            .overlay(alignment: .topLeading) {
+                                if model.composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text("Type a message to Lulu...")
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 16)
+                                        .allowsHitTesting(false)
+                                }
                             }
-                        }
+                            .onTapGesture {
+                                debugReport(
+                                    hypothesisId: "A",
+                                    location: "AssistantView.swift:126",
+                                    message: "composer tapped",
+                                    data: [
+                                        "textLength": model.composeText.count,
+                                        "focused": composerFocused,
+                                    ]
+                                )
+                            }
                         HStack {
                             Spacer()
                             Button(model.isSubmitting ? "Submitting..." : "Send To Lulu") {
+                                debugReport(
+                                    hypothesisId: "B",
+                                    location: "AssistantView.swift:138",
+                                    message: "send button tapped",
+                                    data: [
+                                        "textLength": model.composeText.count,
+                                        "isSubmitting": model.isSubmitting,
+                                        "focused": composerFocused,
+                                    ]
+                                )
                                 Task {
                                     await model.submitTextTurn()
+                                    composerFocused = true
                                 }
                             }
                             .keyboardShortcut(.return, modifiers: [.command])
@@ -136,6 +167,41 @@ struct AssistantView: View {
             .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            composerFocused = true
+            debugReport(
+                hypothesisId: "A",
+                location: "AssistantView.swift:157",
+                message: "assistant view appeared",
+                data: [
+                    "textLength": model.composeText.count,
+                    "focused": composerFocused,
+                ]
+            )
+        }
+        .onChange(of: composerFocused) { _, focused in
+            debugReport(
+                hypothesisId: "A",
+                location: "AssistantView.swift:167",
+                message: "composer focus changed",
+                data: [
+                    "focused": focused,
+                    "textLength": model.composeText.count,
+                ]
+            )
+        }
+        .onChange(of: model.composeText) { _, text in
+            debugReport(
+                hypothesisId: "B",
+                location: "AssistantView.swift:177",
+                message: "composer text changed",
+                data: [
+                    "textLength": text.count,
+                    "preview": String(text.prefix(40)),
+                    "focused": composerFocused,
+                ]
+            )
+        }
     }
 
     private var phaseColor: Color {
@@ -238,66 +304,33 @@ struct AssistantView: View {
             return .secondary
         }
     }
-}
 
-private struct TextTurnEditor: NSViewRepresentable {
-    @Binding var text: String
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
-    }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.borderType = .bezelBorder
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-
-        let textView = NSTextView()
-        textView.delegate = context.coordinator
-        textView.isEditable = true
-        textView.isSelectable = true
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
-        textView.backgroundColor = .textBackgroundColor
-        textView.textContainerInset = NSSize(width: 8, height: 10)
-        textView.isHorizontallyResizable = false
-        textView.isVerticallyResizable = true
-        textView.autoresizingMask = [.width]
-        textView.string = text
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-
-        scrollView.documentView = textView
-        context.coordinator.textView = textView
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = context.coordinator.textView else {
+    // #region debug-point A:desktop-input-wake
+    private func debugReport(
+        hypothesisId: String,
+        location: String,
+        message: String,
+        data: [String: Any]
+    ) {
+        guard let url = URL(string: "http://127.0.0.1:7777/event") else {
             return
         }
-        if textView.string != text {
-            textView.string = text
+        let payload: [String: Any] = [
+            "sessionId": "desktop-input-wake",
+            "runId": "pre-fix",
+            "hypothesisId": hypothesisId,
+            "location": location,
+            "msg": "[DEBUG] \(message)",
+            "data": data,
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            return
         }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request).resume()
     }
-
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        @Binding var text: String
-        weak var textView: NSTextView?
-
-        init(text: Binding<String>) {
-            self._text = text
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView else {
-                return
-            }
-            text = textView.string
-        }
-    }
+    // #endregion
 }

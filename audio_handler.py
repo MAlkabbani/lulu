@@ -8,9 +8,7 @@ from pathlib import Path
 import queue
 import re
 import subprocess
-import tempfile
 import threading
-import wave
 
 import numpy as np
 import sounddevice as sd
@@ -375,19 +373,20 @@ class AudioHandler:
         return np.clip(audio, -1.0, 1.0)
 
     def transcribe_audio(self, audio: np.ndarray) -> str:
-        wav_path = self._write_temp_wav(audio)
         model_reference = self._resolve_whisper_model_reference()
+        pcm_source = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if pcm_source.size == 0:
+            pcm_source = np.zeros(1, dtype=np.float32)
+        pcm_source = np.nan_to_num(pcm_source, nan=0.0, posinf=1.0, neginf=-1.0)
+        pcm_source = np.clip(pcm_source, -1.0, 1.0)
         try:
-            try:
-                result = transcribe(
-                    str(wav_path),
-                    path_or_hf_repo=model_reference,
-                    language=self.settings.whisper_language,
-                )
-            except Exception as exc:
-                raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
-        finally:
-            wav_path.unlink(missing_ok=True)
+            result = transcribe(
+                pcm_source,
+                path_or_hf_repo=model_reference,
+                language=self.settings.whisper_language,
+            )
+        except Exception as exc:
+            raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
 
         text = (result.get("text") or "").strip()
         with self._whisper_model_lock:
@@ -468,24 +467,6 @@ class AudioHandler:
             matched_prefix=self.settings.wake_phrase,
             reason="acoustic-fast-path",
         )
-
-    def _write_temp_wav(self, audio: np.ndarray) -> Path:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            wav_path = Path(tmp.name)
-
-        pcm_source = np.asarray(audio, dtype=np.float32).reshape(-1)
-        if pcm_source.size == 0:
-            pcm_source = np.zeros(1, dtype=np.float32)
-        pcm_source = np.nan_to_num(pcm_source, nan=0.0, posinf=1.0, neginf=-1.0)
-        pcm_source = np.clip(pcm_source, -1.0, 1.0)
-
-        pcm16 = (pcm_source * 32767).astype(np.int16)
-        with wave.open(str(wav_path), "wb") as wav_file:
-            wav_file.setnchannels(self.settings.channels)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(self.settings.sample_rate)
-            wav_file.writeframes(pcm16.tobytes())
-        return wav_path
 
     def _resolve_whisper_model_reference(self) -> str:
         configured = Path(self.settings.whisper_model).expanduser()
