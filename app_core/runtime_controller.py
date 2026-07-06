@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import threading
 from collections import deque
 from collections.abc import Callable, Iterator
-import threading
 from time import perf_counter, sleep
 
+from app_core.dependency_health import probe_dependency_health
+from app_core.event_bus import EventBus
+from app_core.runtime_models import RuntimeSnapshot, make_event
 from audio_handler import (
     AudioCaptureError,
     AudioHandler,
@@ -12,11 +15,9 @@ from audio_handler import (
     MacOSTTS,
     PhraseChunker,
     TTSPlaybackError,
+    audio_input_available,
     text_similarity,
 )
-from app_core.dependency_health import probe_dependency_health
-from app_core.event_bus import EventBus
-from app_core.runtime_models import RuntimeSnapshot, make_event
 from config import Settings, build_wake_guidance
 from llm_router import HybridRouter
 from memory_manager import MemoryManager
@@ -67,7 +68,9 @@ class RuntimeController:
 
         def on_chunk_error(error: TTSPlaybackError) -> None:
             self.ui.show_dependency_error("tts_error", f"Speech playback failed: {error}")
-            self.event_bus.publish(make_event("error.reported", mode="tts_error", detail=str(error)))
+            self.event_bus.publish(
+                make_event("error.reported", mode="tts_error", detail=str(error))
+            )
 
         self.tts.set_on_chunk_spoken(on_chunk_spoken)
         self.tts.set_on_chunk_error(on_chunk_error)
@@ -98,6 +101,7 @@ class RuntimeController:
             self.settings,
             self.ollama_client,
             available_models=available_models,
+            audio_input_available=audio_input_available(),
         )
 
     def get_diagnostics(self) -> dict[str, object]:
@@ -487,7 +491,9 @@ def run_turn_based_voice_loop(
         set_cooldown_remaining(ui, None, event_bus=event_bus)
         set_ui_mode(ui, "listening", "Listening for speech...", event_bus=event_bus)
         ui.log_event("Listening for speech.")
-        audio, capture_failed = capture_audio(audio_handler.record_until_silence, ui, event_bus=event_bus)
+        audio, capture_failed = capture_audio(
+            audio_handler.record_until_silence, ui, event_bus=event_bus
+        )
         if capture_failed:
             set_ui_mode(ui, "idle", "Waiting for microphone recovery.", event_bus=event_bus)
             continue
@@ -565,7 +571,9 @@ def run_continuous_voice_loop(
                 f"Conversation window active: {remaining:.1f}s remaining",
                 event_bus=event_bus,
             )
-            audio, capture_failed = capture_audio(audio_handler.record_until_silence, ui, event_bus=event_bus)
+            audio, capture_failed = capture_audio(
+                audio_handler.record_until_silence, ui, event_bus=event_bus
+            )
             if capture_failed:
                 sleep(0.2)
                 continue
@@ -617,7 +625,9 @@ def run_continuous_voice_loop(
             event_bus=event_bus,
         )
         set_wake_guidance(ui, build_wake_guidance(settings), event_bus=event_bus)
-        audio, capture_failed = capture_audio(audio_handler.record_wake_scan, ui, event_bus=event_bus)
+        audio, capture_failed = capture_audio(
+            audio_handler.record_wake_scan, ui, event_bus=event_bus
+        )
         if capture_failed:
             sleep(0.2)
             continue
@@ -646,19 +656,23 @@ def run_continuous_voice_loop(
                 reason=wake_analysis.reason,
                 event_bus=event_bus,
             )
-            ui.set_response(f"Wake rejected before transcription (confidence {wake_analysis.confidence:.2f}).")
+            ui.set_response(
+                f"Wake rejected before transcription (confidence {wake_analysis.confidence:.2f})."
+            )
             set_wake_guidance(
                 ui,
                 "Reduce nearby noise or move closer to the mic, then say the wake phrase clearly.",
                 event_bus=event_bus,
             )
             ui.log_event(
-                f"Rejected wake attempt acoustically before STT (confidence {wake_analysis.confidence:.2f})."
+                "Rejected wake attempt acoustically before STT "
+                f"(confidence {wake_analysis.confidence:.2f})."
             )
             continue
         if not wake_analysis.candidate and settings.practical_voice_mode:
             ui.log_event(
-                "Acoustic wake confidence was low, but practical voice mode kept the STT wake scan enabled."
+                "Acoustic wake confidence was low, but practical voice mode "
+                "kept the STT wake scan enabled."
             )
             set_wake_guidance(
                 ui,
@@ -680,9 +694,13 @@ def run_continuous_voice_loop(
                 reason=wake_match.reason,
                 event_bus=event_bus,
             )
-            ui.log_event(f"Accepted fast wake path score={wake_match.score:.2f} without waiting for STT.")
+            ui.log_event(
+                f"Accepted fast wake path score={wake_match.score:.2f} without waiting for STT."
+            )
             ui.log_event(f"Wake phrase detected: {settings.wake_phrase}")
-            set_wake_guidance(ui, "Wake matched quickly. Speak your request now.", event_bus=event_bus)
+            set_wake_guidance(
+                ui, "Wake matched quickly. Speak your request now.", event_bus=event_bus
+            )
             ui.set_response("Wake matched. Waiting for your request...")
             conversation_deadline = next_conversation_deadline(settings)
             set_conversation_window_remaining(
@@ -693,7 +711,8 @@ def run_continuous_voice_loop(
             set_ui_mode(
                 ui,
                 "conversation_window",
-                f"Conversation window active: {settings.conversation_window_seconds:.1f}s remaining",
+                "Conversation window active: "
+                f"{settings.conversation_window_seconds:.1f}s remaining",
                 event_bus=event_bus,
             )
             ui.log_event(
@@ -712,7 +731,8 @@ def run_continuous_voice_loop(
             ui.set_response("Wake scan produced no transcript. Listening again...")
             set_wake_guidance(
                 ui,
-                "Try speaking a little louder or closer to the mic, then pause after the wake phrase.",
+                "Try speaking a little louder or closer to the mic, "
+                "then pause after the wake phrase.",
                 event_bus=event_bus,
             )
             continue
@@ -754,14 +774,18 @@ def run_continuous_voice_loop(
                 event_bus=event_bus,
             )
             ui.set_response(
-                wake_rejection_response(reason=rejection_reason, score=wake_match.score, settings=settings)
+                wake_rejection_response(
+                    reason=rejection_reason, score=wake_match.score, settings=settings
+                )
             )
             set_wake_guidance(
                 ui,
                 wake_rejection_guidance(rejection_reason, settings),
                 event_bus=event_bus,
             )
-            ui.log_event(f"Rejected wake attempt: {rejection_reason} (score {wake_match.score:.2f}).")
+            ui.log_event(
+                f"Rejected wake attempt: {rejection_reason} (score {wake_match.score:.2f})."
+            )
             continue
 
         record_wake_attempt(
@@ -773,7 +797,9 @@ def run_continuous_voice_loop(
             event_bus=event_bus,
         )
         ui.log_event(
-            f"Accepted wake attempt score={wake_match.score:.2f}: {wake_match.matched_prefix or settings.wake_phrase}"
+            "Accepted wake attempt "
+            f"score={wake_match.score:.2f}: "
+            f"{wake_match.matched_prefix or settings.wake_phrase}"
         )
         ui.log_event(f"Wake phrase detected: {settings.wake_phrase}")
         set_wake_guidance(ui, "Wake matched. Speak your request now.", event_bus=event_bus)
@@ -810,7 +836,8 @@ def run_continuous_voice_loop(
             set_ui_mode(
                 ui,
                 "conversation_window",
-                f"Conversation window active: {settings.conversation_window_seconds:.1f}s remaining",
+                "Conversation window active: "
+                f"{settings.conversation_window_seconds:.1f}s remaining",
                 event_bus=event_bus,
             )
             ui.log_event(
@@ -822,7 +849,8 @@ def wake_rejection_response(reason: str, score: float, settings: Settings) -> st
     phrase = settings.wake_phrase
     if reason == "acoustic-reject":
         return (
-            f"Wake rejected before transcription: the audio pattern did not confidently match '{phrase}' "
+            "Wake rejected before transcription: the audio pattern did not "
+            f"confidently match '{phrase}' "
             f"(confidence {score:.2f})."
         )
     if reason == "too-short":
@@ -837,11 +865,16 @@ def wake_rejection_response(reason: str, score: float, settings: Settings) -> st
 def wake_rejection_guidance(reason: str, settings: Settings) -> str:
     phrase = settings.wake_phrase
     if reason == "acoustic-reject":
-        return f"Reduce background noise if possible, move closer to the mic, and say '{phrase}' in one short phrase."
+        return (
+            "Reduce background noise if possible, move closer to the mic, "
+            f"and say '{phrase}' in one short phrase."
+        )
     if reason == "too-short":
         return f"Say '{phrase}' clearly and let the phrase finish before your request."
     if reason == "below-threshold":
-        return f"Try saying '{phrase}' first, pause briefly, then say the request in a second phrase."
+        return (
+            f"Try saying '{phrase}' first, pause briefly, then say the request in a second phrase."
+        )
     if reason == "self-audio-guard":
         return "Wait until Lulu finishes speaking, then try the wake phrase again."
     return build_wake_guidance(settings)
@@ -886,7 +919,9 @@ def transcribe_audio(
             event_bus=event_bus,
         )
     if event_bus is not None and transcript:
-        event_bus.publish(make_event("transcript.updated", transcript=transcript, wake_scan=wake_scan))
+        event_bus.publish(
+            make_event("transcript.updated", transcript=transcript, wake_scan=wake_scan)
+        )
     return transcript
 
 
@@ -921,7 +956,9 @@ def capture_audio(
         audio = capture_fn()
     except AudioCaptureError as exc:
         record_latency(ui, "capture", perf_counter() - capture_start, event_bus=event_bus)
-        handle_dependency_failure(ui, "capture_error", "Microphone capture failed", exc, event_bus=event_bus)
+        handle_dependency_failure(
+            ui, "capture_error", "Microphone capture failed", exc, event_bus=event_bus
+        )
         return None, True
 
     record_latency(ui, "capture", perf_counter() - capture_start, event_bus=event_bus)
@@ -971,7 +1008,9 @@ def process_transcript_turn(
     except Exception as exc:
         record_latency(ui, "router", perf_counter() - router_start, event_bus=event_bus)
         record_latency(ui, "total", perf_counter() - turn_start, event_bus=event_bus)
-        handle_dependency_failure(ui, "router_error", "Turn preparation failed", exc, event_bus=event_bus)
+        handle_dependency_failure(
+            ui, "router_error", "Turn preparation failed", exc, event_bus=event_bus
+        )
         return
     record_latency(ui, "router", perf_counter() - router_start, event_bus=event_bus)
     ui.set_memory_hits(len(prepared.memory_hits))
@@ -1064,7 +1103,9 @@ def process_transcript_turn(
             event_bus=event_bus,
         ):
             if not first_token_recorded and piece.strip():
-                record_latency(ui, "first_token", perf_counter() - stream_start, event_bus=event_bus)
+                record_latency(
+                    ui, "first_token", perf_counter() - stream_start, event_bus=event_bus
+                )
                 first_token_recorded = True
             if speech_start is None and ui.state.emitted_chunk_count > 0:
                 speech_start = perf_counter()
@@ -1079,7 +1120,9 @@ def process_transcript_turn(
         tts.finish_turn()
         record_latency(ui, "stream_total", perf_counter() - stream_start, event_bus=event_bus)
         record_latency(ui, "total", perf_counter() - turn_start, event_bus=event_bus)
-        handle_dependency_failure(ui, "stream_error", "Response streaming failed", exc, event_bus=event_bus)
+        handle_dependency_failure(
+            ui, "stream_error", "Response streaming failed", exc, event_bus=event_bus
+        )
         return
 
     final_text = "".join(response_parts).strip()
@@ -1094,7 +1137,9 @@ def process_transcript_turn(
     ui.set_response(final_text)
     if event_bus is not None:
         event_bus.publish(make_event("response.final", text=final_text))
-    set_ui_mode(ui, "speaking", "Waiting for queued speech chunks to finish...", event_bus=event_bus)
+    set_ui_mode(
+        ui, "speaking", "Waiting for queued speech chunks to finish...", event_bus=event_bus
+    )
     tts_errors = tts.finish_turn()
     if speech_start is not None:
         record_latency(ui, "tts", perf_counter() - speech_start, event_bus=event_bus)
@@ -1133,13 +1178,21 @@ def stream_and_chunk(
         response_parts.append(piece)
         ui.set_response("".join(response_parts).strip())
         if event_bus is not None and piece.strip():
-            event_bus.publish(make_event("response.partial", text="".join(response_parts).strip(), piece=piece))
+            event_bus.publish(
+                make_event("response.partial", text="".join(response_parts).strip(), piece=piece)
+            )
         for chunk in chunker.push(piece):
             pending_chunks.append(chunk)
             if playback_started:
-                emit_ready_chunks_with_lookahead(tts=tts, ui=ui, pending_chunks=pending_chunks, event_bus=event_bus)
-        if not playback_started and should_start_playback(settings=settings, pending_chunks=pending_chunks):
-            emit_ready_chunks_with_lookahead(tts=tts, ui=ui, pending_chunks=pending_chunks, event_bus=event_bus)
+                emit_ready_chunks_with_lookahead(
+                    tts=tts, ui=ui, pending_chunks=pending_chunks, event_bus=event_bus
+                )
+        if not playback_started and should_start_playback(
+            settings=settings, pending_chunks=pending_chunks
+        ):
+            emit_ready_chunks_with_lookahead(
+                tts=tts, ui=ui, pending_chunks=pending_chunks, event_bus=event_bus
+            )
             playback_started = True
         yield piece
 
@@ -1221,7 +1274,10 @@ def merge_short_final_pending_tail(*, settings: Settings, pending_chunks: list[s
     previous = pending_chunks[-2]
     if len(last) > settings.tts_stream_tail_merge_chars:
         return False
-    if len(previous) + len(last) + 1 > settings.tts_stream_max_chunk_chars + settings.tts_stream_tail_merge_overflow_chars:
+    if (
+        len(previous) + len(last) + 1
+        > settings.tts_stream_max_chunk_chars + settings.tts_stream_tail_merge_overflow_chars
+    ):
         return False
     pending_chunks[-2] = f"{previous} {last}".strip()
     pending_chunks.pop()
@@ -1246,8 +1302,13 @@ def cooldown_active(now: float, cooldown_until: float) -> bool:
     return now < cooldown_until
 
 
-def recent_assistant_audio_guard_active(*, last_assistant_reply_at: float, now: float, settings: Settings) -> bool:
-    return last_assistant_reply_at > 0.0 and (now - last_assistant_reply_at) <= settings.self_audio_guard_seconds
+def recent_assistant_audio_guard_active(
+    *, last_assistant_reply_at: float, now: float, settings: Settings
+) -> bool:
+    return (
+        last_assistant_reply_at > 0.0
+        and (now - last_assistant_reply_at) <= settings.self_audio_guard_seconds
+    )
 
 
 def should_suppress_self_audio_echo(

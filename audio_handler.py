@@ -9,14 +9,22 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Any
 
 import numpy as np
-import sounddevice as sd
 from huggingface_hub import snapshot_download
 from mlx_whisper import transcribe
 
 from config import Settings
 from wake_detection import WakeAudioAnalysis, WakeWordEngine, combine_wake_confidence
+
+try:
+    import sounddevice as sd
+except (ImportError, OSError) as exc:
+    sd: Any = None
+    _SOUNDDEVICE_IMPORT_ERROR: Exception | None = exc
+else:
+    _SOUNDDEVICE_IMPORT_ERROR = None
 
 
 class AudioCaptureError(RuntimeError):
@@ -33,6 +41,10 @@ class TTSPlaybackError(RuntimeError):
     def __init__(self, chunk: str, message: str) -> None:
         super().__init__(message)
         self.chunk = chunk
+
+
+def audio_input_available() -> bool:
+    return sd is not None
 
 
 def _split_remote_model_reference(model_reference: str, revision: str) -> tuple[str, str | None]:
@@ -340,6 +352,12 @@ class AudioHandler:
         silence_seconds: float,
         pre_roll_chunks: int,
     ) -> np.ndarray | None:
+        if sd is None:
+            raise AudioCaptureError(
+                "Audio input dependency is unavailable. Install PortAudio "
+                "and the sounddevice runtime before recording."
+            ) from _SOUNDDEVICE_IMPORT_ERROR
+
         sample_rate = self.settings.sample_rate
         frames_per_chunk = int(sample_rate * self.settings.vad_chunk_seconds)
         max_chunks = int(max_record_seconds / self.settings.vad_chunk_seconds)

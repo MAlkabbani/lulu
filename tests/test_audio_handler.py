@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from audio_handler import AudioHandler, AudioTranscriptionError, _split_remote_model_reference
+from audio_handler import (
+    AudioCaptureError,
+    AudioHandler,
+    AudioTranscriptionError,
+    _split_remote_model_reference,
+)
 from config import Settings
 
 
@@ -64,3 +69,20 @@ def test_resolve_whisper_model_reference_rejects_unpinned_remote_download(monkey
             "revision": None,
         }
     ]
+
+
+def test_record_until_silence_reports_missing_audio_dependency(monkeypatch) -> None:
+    monkeypatch.setattr("audio_handler.sd", None)
+    monkeypatch.setattr(
+        "audio_handler._SOUNDDEVICE_IMPORT_ERROR",
+        OSError("PortAudio library not found"),
+    )
+    handler = AudioHandler(Settings())
+
+    with pytest.raises(AudioCaptureError, match="Audio input dependency is unavailable"):
+        handler._record_until_silence(
+            max_record_seconds=1.0,
+            min_speech_seconds=0.2,
+            silence_seconds=0.2,
+            pre_roll_chunks=1,
+        )
