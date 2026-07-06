@@ -58,10 +58,16 @@ def test_transcribe_audio_uses_configured_whisper_language(monkeypatch, tmp_path
     fake_model_dir = tmp_path / "fake-whisper-model"
     fake_model_dir.mkdir()
 
-    def fake_transcribe(audio, path_or_hf_repo: str, language: str) -> dict[str, str]:  # noqa: ANN001
+    def fake_transcribe(  # noqa: ANN001
+        audio,
+        path_or_hf_repo: str,
+        language: str,
+        initial_prompt: str | None = None,
+    ) -> dict[str, str]:
         captured["audio"] = audio
         captured["model"] = path_or_hf_repo
         captured["language"] = language
+        captured["initial_prompt"] = initial_prompt
         return {"text": "hey lulu"}
 
     monkeypatch.setattr("audio_handler.transcribe", fake_transcribe)
@@ -73,6 +79,7 @@ def test_transcribe_audio_uses_configured_whisper_language(monkeypatch, tmp_path
     assert transcript == "hey lulu"
     assert captured["model"] == str(fake_model_dir)
     assert captured["language"] == settings.whisper_language
+    assert captured["initial_prompt"] is None
     assert isinstance(captured["audio"], np.ndarray)
     assert captured["audio"].shape == (160,)
 
@@ -82,10 +89,16 @@ def test_transcribe_audio_sanitizes_audio_before_whisper(monkeypatch, tmp_path: 
     fake_model_dir = tmp_path / "fake-whisper-model"
     fake_model_dir.mkdir()
 
-    def fake_transcribe(audio, path_or_hf_repo: str, language: str) -> dict[str, str]:  # noqa: ANN001
+    def fake_transcribe(  # noqa: ANN001
+        audio,
+        path_or_hf_repo: str,
+        language: str,
+        initial_prompt: str | None = None,
+    ) -> dict[str, str]:
         captured["audio"] = audio
         captured["model"] = path_or_hf_repo
         captured["language"] = language
+        captured["initial_prompt"] = initial_prompt
         return {"text": "sanitized"}
 
     monkeypatch.setattr("audio_handler.transcribe", fake_transcribe)
@@ -98,6 +111,36 @@ def test_transcribe_audio_sanitizes_audio_before_whisper(monkeypatch, tmp_path: 
         captured["audio"],
         np.array([0.0, 1.0, -1.0, 1.0, -1.0], dtype=np.float32),
     )
+    assert captured["initial_prompt"] is None
+
+
+def test_transcribe_audio_passes_initial_prompt_to_whisper(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    fake_model_dir = tmp_path / "fake-whisper-model"
+    fake_model_dir.mkdir()
+
+    def fake_transcribe(  # noqa: ANN001
+        audio,
+        path_or_hf_repo: str,
+        language: str,
+        initial_prompt: str | None = None,
+    ) -> dict[str, str]:
+        captured["audio"] = audio
+        captured["model"] = path_or_hf_repo
+        captured["language"] = language
+        captured["initial_prompt"] = initial_prompt
+        return {"text": "hey lulu"}
+
+    monkeypatch.setattr("audio_handler.transcribe", fake_transcribe)
+    handler = AudioHandler(Settings(whisper_model=str(fake_model_dir)))
+
+    transcript = handler.transcribe_audio(
+        np.zeros(160, dtype=np.float32),
+        initial_prompt="hey lulu",
+    )
+
+    assert transcript == "hey lulu"
+    assert captured["initial_prompt"] == "hey lulu"
 
 
 def test_ensure_transcription_ready_runs_single_warmup_across_threads(
@@ -113,7 +156,12 @@ def test_ensure_transcription_ready_runs_single_warmup_across_threads(
     call_count_lock = threading.Lock()
     errors: list[Exception] = []
 
-    def fake_transcribe(audio, path_or_hf_repo: str, language: str):  # noqa: ANN001
+    def fake_transcribe(  # noqa: ANN001
+        audio,
+        path_or_hf_repo: str,
+        language: str,
+        initial_prompt: str | None = None,
+    ):
         nonlocal call_count
         with call_count_lock:
             call_count += 1
@@ -178,6 +226,26 @@ def test_match_wake_phrase_accepts_i_love_prefix_confusion() -> None:
 
     assert result.matched is True
     assert result.remainder == "what time it is"
+    assert result.score >= 0.86
+
+
+def test_match_wake_phrase_accepts_observed_hello_confusion() -> None:
+    handler = AudioHandler(build_settings())
+
+    result = handler.match_wake_phrase("hey hello what's up")
+
+    assert result.matched is True
+    assert result.remainder == "what s up"
+    assert result.score >= 0.86
+
+
+def test_match_wake_phrase_accepts_observed_he_looks_confusion() -> None:
+    handler = AudioHandler(build_settings())
+
+    result = handler.match_wake_phrase("he looks up")
+
+    assert result.matched is True
+    assert result.remainder == "up"
     assert result.score >= 0.86
 
 
@@ -367,6 +435,9 @@ def test_practical_voice_mode_keeps_wake_scan_in_stt_path_when_acoustic_gate_is_
     transcribed_audio: list[np.ndarray] = []
 
     class PracticalAudioHandler:
+        def __init__(self) -> None:
+            self.settings = settings
+
         def ensure_transcription_ready(self) -> None:
             return None
 
@@ -394,8 +465,14 @@ def test_practical_voice_mode_keeps_wake_scan_in_stt_path_when_acoustic_gate_is_
                 latency_ms=8.0,
             )
 
-        def transcribe_audio(self, wake_audio: np.ndarray) -> str:
+        def transcribe_audio(
+            self,
+            wake_audio: np.ndarray,
+            *,
+            initial_prompt: str | None = None,
+        ) -> str:
             transcribed_audio.append(wake_audio.copy())
+            assert initial_prompt == settings.wake_phrase
             stop_event.set()
             return ""
 
@@ -488,7 +565,9 @@ def test_record_wake_scan_uses_wake_specific_capture_settings(monkeypatch) -> No
 
 def test_transcribe_audio_reports_dependency_error_on_whisper_failure() -> None:
     class FailingAudioHandler:
-        def transcribe_audio(self, audio: np.ndarray) -> str:
+        settings = build_settings()
+
+        def transcribe_audio(self, audio: np.ndarray, *, initial_prompt: str | None = None) -> str:
             raise AudioTranscriptionError("mlx whisper model load failed")
 
     ui = TerminalUI(build_settings())
@@ -506,18 +585,29 @@ def test_transcribe_audio_reports_dependency_error_on_whisper_failure() -> None:
 
 def test_transcribe_audio_wake_scan_updates_transcript_and_response() -> None:
     class SuccessfulAudioHandler:
-        def transcribe_audio(self, audio: np.ndarray) -> str:  # noqa: ARG002
+        settings = build_settings()
+        initial_prompt: str | None = None
+
+        def transcribe_audio(  # noqa: ARG002
+            self,
+            audio: np.ndarray,
+            *,
+            initial_prompt: str | None = None,
+        ) -> str:
+            self.initial_prompt = initial_prompt
             return "hey lulu what time is it"
 
+    handler = SuccessfulAudioHandler()
     ui = TerminalUI(build_settings())
 
     transcript = _transcribe_audio(
-        SuccessfulAudioHandler(),
+        handler,
         ui,
         np.zeros(160, dtype=np.float32),
         wake_scan=True,
     )
 
     assert transcript == "hey lulu what time is it"
+    assert handler.initial_prompt == handler.settings.wake_phrase
     assert ui.state.transcript == "hey lulu what time is it"
     assert ui.state.response == "Wake scan captured speech. Matching wake phrase..."

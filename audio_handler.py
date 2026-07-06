@@ -372,7 +372,7 @@ class AudioHandler:
         audio = np.concatenate(speech_frames).astype(np.float32)
         return np.clip(audio, -1.0, 1.0)
 
-    def transcribe_audio(self, audio: np.ndarray) -> str:
+    def transcribe_audio(self, audio: np.ndarray, *, initial_prompt: str | None = None) -> str:
         model_reference = self._resolve_whisper_model_reference()
         pcm_source = np.asarray(audio, dtype=np.float32).reshape(-1)
         if pcm_source.size == 0:
@@ -384,6 +384,7 @@ class AudioHandler:
                 pcm_source,
                 path_or_hf_repo=model_reference,
                 language=self.settings.whisper_language,
+                initial_prompt=initial_prompt,
             )
         except Exception as exc:
             raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
@@ -593,6 +594,8 @@ def _wake_signature(text: str) -> str:
     tokens = [_normalize_wake_token(token) for token in text.split()]
     if len(tokens) >= 2 and tokens[0] == "i" and tokens[1] in {"love", "like"}:
         tokens = ["hey", "lulu", *tokens[2:]]
+    if len(tokens) >= 2 and tokens[0] == "hey" and tokens[1] in {"helo", "hulu", "loks"}:
+        tokens[1] = "lulu"
     collapsed: list[str] = []
     index = 0
 
