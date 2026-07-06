@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 struct BackendConfiguration {
@@ -6,8 +5,9 @@ struct BackendConfiguration {
     let virtualEnvPath: URL
     let pythonExecutable: URL
     let host: String
-    let port: Int
     let launchToken: String
+    let startupNonce: String
+    let startupContractVersion: String
 
     static func `default`() -> BackendConfiguration {
         let packageDirectory = URL(fileURLWithPath: #filePath)
@@ -19,30 +19,15 @@ struct BackendConfiguration {
         let virtualEnvPath = repoRoot.appendingPathComponent(".venv")
         let environment = ProcessInfo.processInfo.environment
         let token = ProcessInfo.processInfo.environment["LULU_DESKTOP_LAUNCH_TOKEN"] ?? UUID().uuidString
-        let preferredPort = environment["LULU_DESKTOP_BACKEND_PORT"]
-            .flatMap(Int.init) ?? 8765
-        let resolvedPort: Int
-        if environment["LULU_DESKTOP_BACKEND_PORT"] != nil {
-            resolvedPort = preferredPort
-        } else {
-            resolvedPort = resolveLaunchPort(host: "127.0.0.1", preferredPort: preferredPort)
-        }
         return BackendConfiguration(
             repoRoot: repoRoot,
             virtualEnvPath: virtualEnvPath,
             pythonExecutable: resolvePythonExecutable(repoRoot: repoRoot, virtualEnvPath: virtualEnvPath),
             host: "127.0.0.1",
-            port: resolvedPort,
-            launchToken: token
+            launchToken: token,
+            startupNonce: UUID().uuidString,
+            startupContractVersion: environment["LULU_DESKTOP_STARTUP_CONTRACT"] ?? "v1"
         )
-    }
-
-    var baseURL: URL {
-        URL(string: "http://\(host):\(port)")!
-    }
-
-    var webSocketURL: URL {
-        URL(string: "ws://\(host):\(port)/v1/events/ws?token=\(launchToken)")!
     }
 
     private static func resolvePythonExecutable(repoRoot: URL, virtualEnvPath: URL) -> URL {
@@ -102,90 +87,5 @@ struct BackendConfiguration {
             result.append(url)
         }
         return result
-    }
-
-    private static func resolveLaunchPort(host: String, preferredPort: Int) -> Int {
-        if canBind(host: host, port: preferredPort) {
-            return preferredPort
-        }
-        return allocateEphemeralPort(host: host) ?? preferredPort
-    }
-
-    private static func canBind(host: String, port: Int) -> Bool {
-        guard let socketDescriptor = openBoundSocket(host: host, port: port) else {
-            return false
-        }
-        close(socketDescriptor)
-        return true
-    }
-
-    private static func allocateEphemeralPort(host: String) -> Int? {
-        guard let socketDescriptor = openBoundSocket(host: host, port: 0) else {
-            return nil
-        }
-        defer { close(socketDescriptor) }
-
-        var address = sockaddr_in()
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let result = withUnsafeMutablePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(socketDescriptor, $0, &length)
-            }
-        }
-        guard result == 0 else {
-            return nil
-        }
-        return Int(UInt16(bigEndian: address.sin_port))
-    }
-
-    private static func openBoundSocket(host: String, port: Int) -> Int32? {
-        guard var address = socketAddress(host: host, port: port) else {
-            return nil
-        }
-
-        let socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard socketDescriptor >= 0 else {
-            return nil
-        }
-
-        var reuseAddress: Int32 = 1
-        _ = withUnsafePointer(to: &reuseAddress) {
-            setsockopt(
-                socketDescriptor,
-                SOL_SOCKET,
-                SO_REUSEADDR,
-                $0,
-                socklen_t(MemoryLayout<Int32>.size)
-            )
-        }
-
-        let bindResult = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(socketDescriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard bindResult == 0 else {
-            close(socketDescriptor)
-            return nil
-        }
-        return socketDescriptor
-    }
-
-    private static func socketAddress(host: String, port: Int) -> sockaddr_in? {
-        guard port >= 0 && port <= Int(UInt16.max) else {
-            return nil
-        }
-
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = in_port_t(UInt16(port).bigEndian)
-        let conversionResult = host.withCString { rawHost in
-            inet_pton(AF_INET, rawHost, &address.sin_addr)
-        }
-        guard conversionResult == 1 else {
-            return nil
-        }
-        return address
     }
 }

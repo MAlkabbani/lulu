@@ -1,5 +1,21 @@
 import Foundation
 
+struct BackendStartupPayload: Decodable {
+    let contractVersion: String
+    let host: String
+    let port: Int
+    let startupNonce: String
+    let service: String
+
+    private enum CodingKeys: String, CodingKey {
+        case contractVersion = "contract_version"
+        case host
+        case port
+        case startupNonce = "startup_nonce"
+        case service
+    }
+}
+
 struct HealthResponse: Decodable {
     let apiVersion: String
     let status: String

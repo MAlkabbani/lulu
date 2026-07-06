@@ -35,6 +35,16 @@ class TTSPlaybackError(RuntimeError):
         self.chunk = chunk
 
 
+def _split_remote_model_reference(model_reference: str, revision: str) -> tuple[str, str | None]:
+    clean_reference = model_reference.strip()
+    if "@" in clean_reference:
+        repo_id, explicit_revision = clean_reference.rsplit("@", 1)
+        repo_id = repo_id.strip()
+        explicit_revision = explicit_revision.strip()
+        return repo_id, explicit_revision or None
+    return clean_reference, revision.strip() or None
+
+
 @dataclass(frozen=True)
 class WakeMatch:
     matched: bool
@@ -187,7 +197,8 @@ class PhraseChunker:
 
 
 class MacOSTTS:
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self._settings = settings or Settings()
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._on_chunk_spoken: Callable[[str], None] | None = None
         self._on_chunk_error: Callable[[TTSPlaybackError], None] | None = None
@@ -242,11 +253,22 @@ class MacOSTTS:
                         check=False,
                         capture_output=True,
                         text=True,
+                        timeout=self._settings.tts_say_timeout_seconds,
                     )
                 except OSError as exc:
                     error = TTSPlaybackError(
                         chunk,
                         f"TTS playback failed because macOS 'say' could not run: {exc}",
+                    )
+                    self._record_turn_error(error)
+                    if self._on_chunk_error is not None:
+                        self._on_chunk_error(error)
+                    continue
+                except subprocess.TimeoutExpired:
+                    error = TTSPlaybackError(
+                        chunk,
+                        "TTS playback timed out while waiting for macOS 'say' to finish."
+                        f" Timeout: {self._settings.tts_say_timeout_seconds}s.",
                     )
                     self._record_turn_error(error)
                     if self._on_chunk_error is not None:
@@ -478,14 +500,24 @@ class AudioHandler:
             if self._whisper_model_path and Path(self._whisper_model_path).exists():
                 return self._whisper_model_path
 
+            repo_id, revision = _split_remote_model_reference(
+                self.settings.whisper_model,
+                self.settings.whisper_model_revision,
+            )
             try:
                 resolved_path = snapshot_download(
-                    repo_id=self.settings.whisper_model,
+                    repo_id=repo_id,
                     local_files_only=True,
+                    revision=revision,
                 )
             except Exception:
+                if revision is None:
+                    raise AudioTranscriptionError(
+                        "Remote Whisper model downloads require a pinned revision. "
+                        "Set MLX_WHISPER_MODEL to repo@revision or set MLX_WHISPER_REVISION."
+                    )
                 try:
-                    resolved_path = snapshot_download(repo_id=self.settings.whisper_model)
+                    resolved_path = snapshot_download(repo_id=repo_id, revision=revision)
                 except Exception as exc:
                     raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
 

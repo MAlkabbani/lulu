@@ -41,10 +41,6 @@ async def require_websocket_auth(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION)
     provided_token = extract_bearer_token(websocket.headers.get("authorization"))
-    if provided_token is None:
-        query_token = websocket.query_params.get("token")
-        provided_token = query_token.strip() if query_token else None
     if provided_token != expected_token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION)
-

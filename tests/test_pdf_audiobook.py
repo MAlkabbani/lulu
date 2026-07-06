@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from argparse import Namespace
@@ -358,6 +359,38 @@ def test_convert_audio_outputs_invokes_ffmpeg(monkeypatch, tmp_path: Path) -> No
     assert portable_paths == [tmp_path / "chapter.wav"]
 
 
+def test_render_section_audio_reports_timeout(monkeypatch, tmp_path: Path) -> None:
+    output_dir = tmp_path / "book"
+    text_dir = output_dir / "text"
+    audio_dir = output_dir / "audio"
+    text_dir.mkdir(parents=True)
+    audio_dir.mkdir()
+    text_path = text_dir / "01-section.txt"
+    text_path.write_text("Hello local audio.", encoding="utf-8")
+
+    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
+        raise subprocess.TimeoutExpired(command, timeout=5)
+
+    monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
+
+    with pytest.raises(Exception, match="timed out"):
+        render_section_audio([text_path], progress=lambda _: None)
+
+
+def test_convert_audio_outputs_reports_timeout(monkeypatch, tmp_path: Path) -> None:
+    audio_path = tmp_path / "chapter.aiff"
+    audio_path.write_text("fake audio", encoding="utf-8")
+    monkeypatch.setattr("pdf_audiobook.shutil.which", lambda _: "/usr/local/bin/ffmpeg")
+
+    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
+        raise subprocess.TimeoutExpired(command, timeout=7)
+
+    monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
+
+    with pytest.raises(Exception, match="timed out"):
+        convert_audio_outputs([audio_path], portable_format="wav", progress=lambda _: None)
+
+
 def test_update_manifest_audio_outputs_records_portable_files(tmp_path: Path) -> None:
     output_dir = tmp_path / "book"
     output_dir.mkdir()
@@ -486,6 +519,81 @@ def test_play_export_directory_reads_text_when_audio_missing(monkeypatch, tmp_pa
     assert playback_mode == "text"
     assert played_paths == [text_path]
     assert recorded_commands == [["say", "-f", str(text_path)]]
+
+
+def test_play_export_directory_rejects_manifest_path_traversal(monkeypatch, tmp_path: Path) -> None:
+    export_dir = tmp_path / "book"
+    text_dir = export_dir / "text"
+    text_dir.mkdir(parents=True)
+    (text_dir / "01-section.txt").write_text("Hello from text export.", encoding="utf-8")
+    outside_path = tmp_path / "outside.txt"
+    outside_path.write_text("secret", encoding="utf-8")
+    (export_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "audio_outputs": {
+                    "portable_conversion": {
+                        "files": ["../outside.txt"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    recorded_commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
+        recorded_commands.append(command)
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
+
+    played_paths, playback_mode = play_export_directory(
+        export_dir,
+        play_mode="auto",
+        progress=lambda _: None,
+    )
+
+    assert playback_mode == "text"
+    assert played_paths == [text_dir / "01-section.txt"]
+    assert all(str(outside_path) not in command for command in recorded_commands)
+
+
+def test_play_export_directory_reports_malformed_manifest(tmp_path: Path) -> None:
+    export_dir = tmp_path / "book"
+    text_dir = export_dir / "text"
+    text_dir.mkdir(parents=True)
+    (text_dir / "01-section.txt").write_text("Hello from text export.", encoding="utf-8")
+    (export_dir / "manifest.json").write_text("{bad json", encoding="utf-8")
+
+    with pytest.raises(PlaybackError, match="manifest is malformed"):
+        play_export_directory(
+            export_dir,
+            play_mode="auto",
+            progress=lambda _: None,
+        )
+
+
+def test_play_export_directory_reports_timeout(monkeypatch, tmp_path: Path) -> None:
+    export_dir = tmp_path / "book"
+    text_dir = export_dir / "text"
+    text_dir.mkdir(parents=True)
+    text_path = text_dir / "01-section.txt"
+    text_path.write_text("Hello from text export.", encoding="utf-8")
+    (export_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
+        raise subprocess.TimeoutExpired(command, timeout=9)
+
+    monkeypatch.setattr("pdf_audiobook.subprocess.run", fake_run)
+
+    with pytest.raises(PlaybackError, match="timed out"):
+        play_export_directory(
+            export_dir,
+            play_mode="auto",
+            progress=lambda _: None,
+        )
 
 
 def test_play_export_directory_requires_audio_when_audio_mode_requested(tmp_path: Path) -> None:

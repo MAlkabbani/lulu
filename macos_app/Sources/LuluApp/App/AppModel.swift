@@ -125,12 +125,17 @@ final class AppModel: ObservableObject {
 
     private func attachEvents() async {
         eventTask?.cancel()
-        eventTask = await backend.connectEvents { [weak self] envelope in
-            Task { @MainActor in
-                self?.apply(event: envelope)
+        do {
+            eventTask = try await backend.connectEvents { [weak self] envelope in
+                Task { @MainActor in
+                    self?.apply(event: envelope)
+                }
             }
+            websocketConnected = true
+        } catch {
+            websocketConnected = false
+            appendEvent("Event stream setup failed: \(error.localizedDescription)")
         }
-        websocketConnected = true
     }
 
     func startContinuousVoiceMode() async {

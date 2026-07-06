@@ -18,8 +18,7 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
 
-def _app_config() -> dict[str, object]:
-    config_path = default_config_path()
+def load_config_dict(config_path: Path) -> dict[str, object]:
     if not config_path.exists():
         return {}
     try:
@@ -31,8 +30,8 @@ def _app_config() -> dict[str, object]:
     return loaded
 
 
-def _app_config_value(name: str) -> object | None:
-    config = _app_config()
+def config_value(name: str, *, config_path: Path) -> object | None:
+    config = load_config_dict(config_path)
     if not config:
         return None
     candidates = [name, name.lower(), name.lower().replace("-", "_")]
@@ -42,29 +41,36 @@ def _app_config_value(name: str) -> object | None:
     return None
 
 
-def _env_raw(name: str) -> str | None:
+def _env_raw(name: str, *, config_path: Path | None = None) -> str | None:
     raw = os.getenv(name)
     if raw is not None:
         return raw.strip()
-    config_value = _app_config_value(name)
-    if config_value is None:
+    selected_config_path = config_path or default_config_path()
+    resolved_value = config_value(name, config_path=selected_config_path)
+    if resolved_value is None:
         return None
-    return str(config_value).strip()
+    return str(resolved_value).strip()
 
 
-def _env_str(name: str, default: str) -> str:
-    raw_value = _env_raw(name)
+def _env_str(name: str, default: str, *, config_path: Path | None = None) -> str:
+    raw_value = _env_raw(name, config_path=config_path)
     if raw_value is None:
         return default
     return raw_value
 
 
-def _env_path(name: str, default: str) -> Path:
-    return Path(_env_str(name, default))
+def _env_path(name: str, default: str, *, config_path: Path | None = None) -> Path:
+    return Path(_env_str(name, default, config_path=config_path))
 
 
-def _parse_numeric_env(name: str, default: str, parser: type[int] | type[float]) -> int | float:
-    raw_value = _env_raw(name)
+def _parse_numeric_env(
+    name: str,
+    default: str,
+    parser: type[int] | type[float],
+    *,
+    config_path: Path | None = None,
+) -> int | float:
+    raw_value = _env_raw(name, config_path=config_path)
     if raw_value in {None, ""}:
         raw_value = default
     try:
@@ -73,16 +79,16 @@ def _parse_numeric_env(name: str, default: str, parser: type[int] | type[float])
         raise ValueError(f"Invalid value for {name}: expected {parser.__name__}, got {raw_value!r}") from exc
 
 
-def _env_int(name: str, default: str) -> int:
-    return int(_parse_numeric_env(name, default, int))
+def _env_int(name: str, default: str, *, config_path: Path | None = None) -> int:
+    return int(_parse_numeric_env(name, default, int, config_path=config_path))
 
 
-def _env_float(name: str, default: str) -> float:
-    return float(_parse_numeric_env(name, default, float))
+def _env_float(name: str, default: str, *, config_path: Path | None = None) -> float:
+    return float(_parse_numeric_env(name, default, float, config_path=config_path))
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    raw_value = _env_raw(name)
+def _env_bool(name: str, default: bool, *, config_path: Path | None = None) -> bool:
+    raw_value = _env_raw(name, config_path=config_path)
     if raw_value in {None, ""}:
         return default
     normalized = raw_value.lower()
@@ -92,6 +98,31 @@ def _env_bool(name: str, default: bool) -> bool:
         return False
     valid = ", ".join(sorted(_TRUE_VALUES | _FALSE_VALUES))
     raise ValueError(f"Invalid value for {name}: expected one of {valid}, got {raw_value!r}")
+
+
+def _resolve_config_backed_settings(settings: "Settings", *, config_path: Path) -> None:
+    baseline_config_path = default_config_path()
+    resolvers: tuple[tuple[str, callable], ...] = (
+        ("app_name", lambda path: _env_str("LULU_APP_NAME", "Lulu", config_path=path)),
+        ("ollama_base_url", lambda path: _env_str("OLLAMA_BASE_URL", "http://localhost:11434", config_path=path)),
+        ("chat_model", lambda path: _env_str("OLLAMA_CHAT_MODEL", "llama3.2:3b", config_path=path)),
+        ("embedding_model", lambda path: _env_str("OLLAMA_EMBED_MODEL", "nomic-embed-text", config_path=path)),
+        (
+            "whisper_model",
+            lambda path: _env_str("MLX_WHISPER_MODEL", "mlx-community/whisper-base-mlx", config_path=path),
+        ),
+        ("whisper_language", lambda path: _env_str("MLX_WHISPER_LANGUAGE", "en", config_path=path)),
+        ("chroma_path", lambda path: _env_path("CHROMA_PATH", str(default_chroma_path()), config_path=path)),
+        ("logs_path", lambda path: _env_path("LOGS_PATH", str(default_logs_path()), config_path=path)),
+        ("exports_path", lambda path: _env_path("EXPORTS_PATH", str(default_exports_path()), config_path=path)),
+        ("wake_phrase", lambda path: _env_str("WAKE_PHRASE", "hey lulu", config_path=path)),
+        ("practical_voice_mode", lambda path: _env_bool("PRACTICAL_VOICE_MODE", False, config_path=path)),
+    )
+    for attribute_name, resolver in resolvers:
+        current_value = getattr(settings, attribute_name)
+        baseline_value = resolver(baseline_config_path)
+        if current_value == baseline_value:
+            object.__setattr__(settings, attribute_name, resolver(config_path))
 
 
 @dataclass(frozen=True)
@@ -112,6 +143,7 @@ class Settings:
             "mlx-community/whisper-base-mlx",
         )
     )
+    whisper_model_revision: str = field(default_factory=lambda: _env_str("MLX_WHISPER_REVISION", ""))
     whisper_language: str = field(default_factory=lambda: _env_str("MLX_WHISPER_LANGUAGE", "en"))
     chroma_path: Path = field(default_factory=lambda: _env_path("CHROMA_PATH", str(default_chroma_path())))
     chroma_collection: str = field(
@@ -186,6 +218,18 @@ class Settings:
     )
     tts_stream_max_chunk_chars: int = field(
         default_factory=lambda: _env_int("TTS_STREAM_MAX_CHUNK_CHARS", "240")
+    )
+    tts_say_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("TTS_SAY_TIMEOUT_SECONDS", "20")
+    )
+    pdf_audio_render_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("PDF_AUDIO_RENDER_TIMEOUT_SECONDS", "60")
+    )
+    pdf_audio_convert_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("PDF_AUDIO_CONVERT_TIMEOUT_SECONDS", "120")
+    )
+    pdf_audio_playback_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("PDF_AUDIO_PLAYBACK_TIMEOUT_SECONDS", "120")
     )
     practical_voice_mode: bool = field(
         default_factory=lambda: _env_bool("PRACTICAL_VOICE_MODE", False)
@@ -270,6 +314,8 @@ class Settings:
     )
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "config_path", Path(self.config_path))
+        _resolve_config_backed_settings(self, config_path=self.config_path)
         if not self.wake_phrase.strip():
             raise ValueError("WAKE_PHRASE must not be empty.")
         if not self.practical_voice_mode:

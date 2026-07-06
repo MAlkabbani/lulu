@@ -133,7 +133,7 @@ def test_near_duplicate_updates_existing_canonical_record() -> None:
     assert collection.records[first.memory_id].metadata["previous_text"] == "My favorite tea is jasmine"
 
 
-def test_conflicting_memory_uses_latest_wins_when_semantically_close() -> None:
+def test_conflicting_memory_preserves_revision_history_when_semantically_close() -> None:
     collection = FakeCollection()
     model_client = FakeModelClient(
         embedding_map={
@@ -150,10 +150,13 @@ def test_conflicting_memory_uses_latest_wins_when_semantically_close() -> None:
     first = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
     second = manager.upsert_memory("My favorite tea is mint", source="tool_call")
 
-    assert second.action == "updated"
-    assert first.memory_id == second.memory_id
-    assert collection.count() == 1
-    assert collection.records[first.memory_id].document == "My favorite tea is mint"
+    assert second.action == "revised"
+    assert first.memory_id != second.memory_id
+    assert collection.count() == 2
+    assert collection.records[first.memory_id].document == "My favorite tea is jasmine"
+    assert collection.records[first.memory_id].metadata["is_current_revision"] is False
+    assert collection.records[second.memory_id].document == "My favorite tea is mint"
+    assert collection.records[second.memory_id].metadata["supersedes_memory_id"] == first.memory_id
 
 
 def test_classification_fallback_uses_general_tag() -> None:
@@ -251,18 +254,44 @@ def test_explain_memory_returns_auditable_metadata() -> None:
     )
     manager = MemoryManager(build_settings(), model_client, collection=collection)
     first = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
-    manager.upsert_memory("My favorite tea is mint", source="tool_call")
+    second = manager.upsert_memory("My favorite tea is mint", source="tool_call")
 
-    explanation = manager.explain_memory(first.memory_id)
+    explanation = manager.explain_memory(second.memory_id)
 
     assert explanation is not None
-    assert explanation["memory_id"] == first.memory_id
+    assert explanation["memory_id"] == second.memory_id
     assert explanation["category"] == "tea"
     assert explanation["source_label"] == "model-mediated"
     assert explanation["revision_count"] == 2
-    assert explanation["last_action"] == "updated"
+    assert explanation["last_action"] == "revised"
     assert explanation["previous_text"] == "My favorite tea is jasmine"
+    assert explanation["supersedes_memory_id"] == first.memory_id
+    assert explanation["is_current_revision"] is True
     assert "Canonical memory in category tea" in explanation["explanation"]
+
+
+def test_query_memory_prefers_latest_current_revision() -> None:
+    collection = FakeCollection()
+    model_client = FakeModelClient(
+        embedding_map={
+            "My favorite tea is jasmine": [0.10],
+            "My favorite tea is mint": [0.11],
+            "What tea do I like?": [0.11],
+        },
+        tag_map={
+            "My favorite tea is jasmine": ["tea", "preference"],
+            "My favorite tea is mint": ["tea", "preference"],
+        },
+    )
+    manager = MemoryManager(build_settings(), model_client, collection=collection)
+    manager.upsert_memory("My favorite tea is jasmine", source="explicit")
+    revised = manager.upsert_memory("My favorite tea is mint", source="tool_call")
+
+    hits = manager.query_memory("What tea do I like?")
+
+    assert len(hits) == 1
+    assert hits[0].id == revised.memory_id
+    assert hits[0].text == "My favorite tea is mint"
 
 
 def test_serialize_hit_includes_match_confidence_for_search_results() -> None:

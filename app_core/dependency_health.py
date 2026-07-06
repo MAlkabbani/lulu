@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +63,16 @@ def probe_dependency_health(
 def _path_is_usable(path: Path | str) -> bool:
     candidate = Path(path)
     parent = candidate if candidate.exists() else candidate.parent
-    return parent.exists() and parent.is_dir()
+    if not parent.exists() or not parent.is_dir():
+        return False
+    probe_path = parent / f".lulu-healthcheck-{os.getpid()}"
+    try:
+        with probe_path.open("w", encoding="utf-8") as handle:
+            handle.write("ok")
+        probe_path.unlink(missing_ok=True)
+    except OSError:
+        return False
+    return True
 
 
 def _model_is_available(model_name: str, known_models: set[str]) -> bool:

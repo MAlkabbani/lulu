@@ -97,6 +97,7 @@ class MemoryManager:
             memory_id = str(uuid4())
             revision_count = 1
             payload_metadata = self._build_metadata(
+                memory_id=memory_id,
                 source=source,
                 tags=tags,
                 normalized_text=normalized_text,
@@ -105,6 +106,10 @@ class MemoryManager:
                 revision_count=revision_count,
                 last_action="inserted",
                 previous_text="",
+                memory_kind="canonical",
+                revision_root_id=memory_id,
+                supersedes_memory_id="",
+                is_current_revision=True,
                 extra_metadata=metadata,
             )
             self.collection.upsert(
@@ -127,27 +132,75 @@ class MemoryManager:
             )
 
         existing_metadata = duplicate.metadata
+        existing_normalized = str(existing_metadata.get("normalized_text", ""))
+        if existing_normalized == normalized_text:
+            revision_count = self._revision_count(existing_metadata) + 1
+            payload_metadata = self._build_metadata(
+                memory_id=duplicate.id,
+                source=source,
+                tags=tags,
+                normalized_text=normalized_text,
+                created_at=str(existing_metadata.get("created_at", now)),
+                updated_at=now,
+                revision_count=revision_count,
+                last_action="updated",
+                previous_text=duplicate.text,
+                memory_kind=str(existing_metadata.get("memory_kind", "canonical")),
+                revision_root_id=str(existing_metadata.get("revision_root_id", duplicate.id)),
+                supersedes_memory_id=str(existing_metadata.get("supersedes_memory_id", "")),
+                is_current_revision=True,
+                extra_metadata=metadata,
+            )
+            self.collection.upsert(
+                ids=[duplicate.id],
+                documents=[clean_text],
+                embeddings=[embedding],
+                metadatas=[payload_metadata],
+            )
+            return MemorySaveResult(
+                memory_id=duplicate.id,
+                action="updated",
+                text=clean_text,
+                tags=tags,
+                category=self._primary_category(tags),
+                source=source,
+                source_label=self._source_label(source),
+                revision_count=revision_count,
+                similarity=duplicate.similarity,
+                updated_at=now,
+                matched_memory_id=duplicate.id,
+                matched_text=duplicate.text,
+            )
+
         revision_count = self._revision_count(existing_metadata) + 1
+        revision_root_id = str(existing_metadata.get("revision_root_id", duplicate.id))
+        self._mark_revision_superseded(duplicate)
+        memory_id = str(uuid4())
         payload_metadata = self._build_metadata(
+            memory_id=memory_id,
             source=source,
             tags=tags,
             normalized_text=normalized_text,
-            created_at=str(existing_metadata.get("created_at", now)),
+            created_at=now,
             updated_at=now,
             revision_count=revision_count,
-            last_action="updated",
+            last_action="revised",
             previous_text=duplicate.text,
+            memory_kind="revision",
+            revision_root_id=revision_root_id,
+            supersedes_memory_id=duplicate.id,
+            is_current_revision=True,
             extra_metadata=metadata,
         )
         self.collection.upsert(
-            ids=[duplicate.id],
+            ids=[memory_id],
             documents=[clean_text],
             embeddings=[embedding],
             metadatas=[payload_metadata],
         )
         return MemorySaveResult(
-            memory_id=duplicate.id,
-            action="updated",
+            memory_id=memory_id,
+            action="revised",
             text=clean_text,
             tags=tags,
             category=self._primary_category(tags),
@@ -192,7 +245,7 @@ class MemoryManager:
                     metadata=metadata or {},
                 )
             )
-        return hits
+        return self._current_revision_hits(hits)
 
     def list_recent_memories(self, limit: int) -> list[MemoryHit]:
         if limit < 1 or self.collection.count() == 0:
@@ -202,6 +255,7 @@ class MemoryManager:
             include=["documents", "metadatas"],
         )
         hits = self._hits_from_get_result(raw)
+        hits = self._current_revision_hits(hits)
         hits.sort(
             key=lambda hit: hit.metadata.get("updated_at", ""),
             reverse=True,
@@ -237,6 +291,9 @@ class MemoryManager:
             f"{metadata.get('updated_at', 'unknown')}."
         )
         previous_text = str(metadata.get("previous_text", "")).strip()
+        revision_root_id = str(metadata.get("revision_root_id", hit.id))
+        supersedes_memory_id = str(metadata.get("supersedes_memory_id", "")).strip() or None
+        is_current_revision = bool(metadata.get("is_current_revision", True))
         return {
             "memory_id": hit.id,
             "text": hit.text,
@@ -249,6 +306,9 @@ class MemoryManager:
             "created_at": metadata.get("created_at", "unknown"),
             "updated_at": metadata.get("updated_at", "unknown"),
             "previous_text": previous_text or None,
+            "revision_root_id": revision_root_id,
+            "supersedes_memory_id": supersedes_memory_id,
+            "is_current_revision": is_current_revision,
             "explanation": explanation,
         }
 
@@ -280,6 +340,8 @@ class MemoryManager:
             "source_label": self._source_label(str(metadata.get("source", "unknown"))),
             "revision_count": self._revision_count(metadata),
             "updated_at": metadata.get("updated_at", "unknown"),
+            "revision_root_id": metadata.get("revision_root_id", hit.id),
+            "is_current_revision": metadata.get("is_current_revision", True),
         }
         if include_similarity:
             payload["similarity"] = hit.similarity
@@ -332,9 +394,21 @@ class MemoryManager:
 
         return best_match
 
+    def _mark_revision_superseded(self, hit: MemoryHit) -> None:
+        metadata = dict(hit.metadata or {})
+        metadata["is_current_revision"] = False
+        metadata["updated_at"] = self._timestamp()
+        self.collection.upsert(
+            ids=[hit.id],
+            documents=[hit.text],
+            embeddings=[self.model_client.embed_text(hit.text)],
+            metadatas=[metadata],
+        )
+
     @staticmethod
     def _normalize_text(text: str) -> str:
-        return re.sub(r"\s+", " ", text.strip().lower())
+        normalized = re.sub(r"[^\w\s]", " ", text.strip().lower())
+        return re.sub(r"\s+", " ", normalized).strip()
 
     def _classify_tags(self, text: str) -> list[str]:
         raw_tags = self.model_client.classify_memory_tags(text)
@@ -361,6 +435,7 @@ class MemoryManager:
 
     def _build_metadata(
         self,
+        memory_id: str,
         source: str,
         tags: list[str],
         normalized_text: str,
@@ -369,9 +444,14 @@ class MemoryManager:
         revision_count: int,
         last_action: str,
         previous_text: str,
+        memory_kind: str,
+        revision_root_id: str,
+        supersedes_memory_id: str,
+        is_current_revision: bool,
         extra_metadata: dict[str, Any] | None,
     ) -> dict[str, Any]:
         payload = {
+            "memory_id": memory_id,
             "source": source,
             "source_label": self._source_label(source),
             "tags_csv": ",".join(tags),
@@ -382,13 +462,37 @@ class MemoryManager:
             "revision_count": revision_count,
             "last_action": last_action,
             "previous_text": previous_text,
-            "memory_kind": "canonical",
+            "memory_kind": memory_kind,
+            "revision_root_id": revision_root_id,
+            "supersedes_memory_id": supersedes_memory_id,
+            "is_current_revision": is_current_revision,
         }
         if extra_metadata:
             for key, value in extra_metadata.items():
                 if isinstance(value, (str, int, float, bool)):
                     payload[key] = value
         return payload
+
+    @staticmethod
+    def _current_revision_hits(hits: list[MemoryHit]) -> list[MemoryHit]:
+        selected: dict[str, MemoryHit] = {}
+        for hit in hits:
+            metadata = hit.metadata or {}
+            revision_root_id = str(metadata.get("revision_root_id", hit.id))
+            current = selected.get(revision_root_id)
+            if current is None:
+                selected[revision_root_id] = hit
+                continue
+            current_flag = bool(current.metadata.get("is_current_revision", True))
+            hit_flag = bool(metadata.get("is_current_revision", True))
+            if hit_flag and not current_flag:
+                selected[revision_root_id] = hit
+                continue
+            if hit_flag == current_flag and str(metadata.get("updated_at", "")) >= str(
+                current.metadata.get("updated_at", "")
+            ):
+                selected[revision_root_id] = hit
+        return list(selected.values())
 
     @staticmethod
     def _parse_tags(metadata: dict[str, Any] | None) -> list[str]:

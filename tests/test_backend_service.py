@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app_core.event_bus import EventBus
 from app_core.runtime_models import DependencyHealth, RuntimeSnapshot, make_event
@@ -175,6 +178,38 @@ def test_websocket_stream_serializes_runtime_events(tmp_path: Path) -> None:
     assert event["payload"]["text"] == "Hello from event bus"
 
 
+def test_websocket_stream_disconnects_slow_consumers(tmp_path: Path) -> None:
+    controller = FakeController(tmp_path)
+    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+
+    with client.websocket_connect("/v1/events/ws", headers=auth_headers()) as websocket:
+        for index in range(200):
+            controller.event_bus.publish(make_event("response.partial", text=f"chunk-{index}"))
+        time.sleep(0.1)
+
+        first = websocket.receive_json()
+        observed_types = [first["event_type"]]
+        for _ in range(100):
+            message = websocket.receive_json()
+            observed_types.append(message["event_type"])
+            if message["event_type"] == "service.overload":
+                break
+
+    assert "service.connected" in observed_types
+    assert "service.overload" in observed_types
+
+
+def test_websocket_query_token_is_rejected(tmp_path: Path) -> None:
+    controller = FakeController(tmp_path)
+    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/v1/events/ws?token=test-token"):
+            pass
+
+
 def test_update_settings_persists_json_overlay(tmp_path: Path) -> None:
     controller = FakeController(tmp_path)
     app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
@@ -191,3 +226,42 @@ def test_update_settings_persists_json_overlay(tmp_path: Path) -> None:
     persisted = controller.settings.config_path.read_text(encoding="utf-8")
     assert '"chat_model": "llama3.2:1b"' in persisted
     assert '"practical_voice_mode": false' in persisted
+
+
+def test_update_settings_rejects_malformed_existing_json(tmp_path: Path) -> None:
+    controller = FakeController(tmp_path)
+    controller.settings.config_path.write_text("{bad json", encoding="utf-8")
+    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+
+    response = client.put(
+        "/v1/settings",
+        headers=auth_headers(),
+        json={"chat_model": "llama3.2:1b"},
+    )
+
+    assert response.status_code == 409
+    assert controller.settings.config_path.read_text(encoding="utf-8") == "{bad json"
+
+
+def test_update_settings_preserves_existing_keys_and_creates_backup(tmp_path: Path) -> None:
+    controller = FakeController(tmp_path)
+    controller.settings.config_path.write_text(
+        '{"chat_model": "old-model", "wake_phrase": "hey lulu"}',
+        encoding="utf-8",
+    )
+    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+
+    response = client.put(
+        "/v1/settings",
+        headers=auth_headers(),
+        json={"chat_model": "new-model"},
+    )
+
+    assert response.status_code == 200
+    persisted = json.loads(controller.settings.config_path.read_text(encoding="utf-8"))
+    assert persisted["chat_model"] == "new-model"
+    assert persisted["wake_phrase"] == "hey lulu"
+    backup_path = controller.settings.config_path.parent / f"{controller.settings.config_path.name}.bak"
+    assert backup_path.exists()

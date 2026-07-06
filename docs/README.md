@@ -10,6 +10,7 @@ This directory is the public documentation surface for Lulu VAIA.
 - [Product Requirements](./prd.md)
 - [Decision Log](./decision-log.md)
 - [Wake Performance Report](./wake-performance-report.md)
+- [Codebase Audit 2026-07-06](./codebase-audit-2026-07-06.md)
 - [Licensing Options](./licensing-options.md)
 - [Desktop App Implementation Spec](./implementation-plans/macos-desktop-app-implementation-spec.md)
 - [Roadmap](../ROADMAP.md)
@@ -23,6 +24,7 @@ This directory is the public documentation surface for Lulu VAIA.
 - `prd.md`: product scope, requirements, and user stories
 - `decision-log.md`: why major technical choices were made
 - `wake-performance-report.md`: benchmark framing and wake-system results
+- `codebase-audit-2026-07-06.md`: consolidated security, quality, and remediation findings from the July 2026 audit
 - `licensing-options.md`: plain-language tradeoffs for choosing an open-source license
 - `implementation-plans/`: scoped future implementation plans and engineering specs
 

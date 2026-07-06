@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -46,6 +47,16 @@ TITLE_CONNECTOR_WORDS = {
     "to",
     "with",
 }
+
+
+def _command_timeout_seconds(env_name: str, default: int) -> int:
+    raw_value = os.getenv(env_name, str(default)).strip()
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise InputValidationError(
+            f"{env_name} must be an integer number of seconds, got {raw_value!r}."
+        ) from exc
 
 
 class PDFToAudiobookError(RuntimeError):
@@ -995,11 +1006,17 @@ def render_section_audio(
                 check=False,
                 capture_output=True,
                 text=True,
+                timeout=_command_timeout_seconds("PDF_AUDIO_RENDER_TIMEOUT_SECONDS", 60),
             )
         except OSError as exc:
             raise AudiobookRenderError(
                 "Failed to invoke macOS say. "
                 "This feature requires the native say command on macOS."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise AudiobookRenderError(
+                f"Audio rendering timed out for {text_path.name} after {exc.timeout} seconds.",
+                audio_paths=audio_paths,
             ) from exc
         if result.returncode != 0:
             detail = (result.stderr or "").strip() or (
@@ -1050,10 +1067,17 @@ def convert_audio_outputs(
                 check=False,
                 capture_output=True,
                 text=True,
+                timeout=_command_timeout_seconds("PDF_AUDIO_CONVERT_TIMEOUT_SECONDS", 120),
             )
         except OSError as exc:
             raise AudiobookRenderError(
                 "Failed to invoke ffmpeg for portable audio conversion."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise AudiobookRenderError(
+                f"Portable audio conversion timed out for {audio_path.name} after {exc.timeout} seconds.",
+                audio_paths=audio_paths,
+                portable_audio_paths=portable_paths,
             ) from exc
         if result.returncode != 0:
             detail = (result.stderr or "").strip() or (
@@ -1160,10 +1184,15 @@ def play_export_directory(
                 check=False,
                 capture_output=True,
                 text=True,
+                timeout=_command_timeout_seconds("PDF_AUDIO_PLAYBACK_TIMEOUT_SECONDS", 120),
             )
         except OSError as exc:
             raise PlaybackError(
                 f"Failed to invoke macOS {command_name} for {path.name}."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise PlaybackError(
+                f"Playback timed out for {path.name} after {exc.timeout} seconds."
             ) from exc
         if result.returncode != 0:
             detail = (result.stderr or "").strip() or (
@@ -1177,7 +1206,10 @@ def collect_export_assets(export_dir: Path) -> dict[str, list[Path]]:
     manifest_path = export_dir / "manifest.json"
     manifest = {}
     if manifest_path.exists():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise PlaybackError("Export manifest is malformed and could not be read.") from exc
     audio_outputs = manifest.get("audio_outputs", {})
     portable_payload = audio_outputs.get("portable_conversion", {})
 
@@ -1217,11 +1249,17 @@ def collect_export_assets(export_dir: Path) -> dict[str, list[Path]]:
 def _resolve_relative_paths(output_dir: Path, values: object) -> list[Path]:
     if not isinstance(values, list):
         return []
+    output_root = output_dir.resolve()
     resolved_paths: list[Path] = []
     for value in values:
         if not isinstance(value, str):
             continue
-        path = output_dir / value
+        candidate = Path(value)
+        if candidate.is_absolute():
+            continue
+        path = (output_dir / candidate).resolve()
+        if not str(path).startswith(str(output_root) + os.sep) and path != output_root:
+            continue
         if path.exists():
             resolved_paths.append(path)
     return resolved_paths
