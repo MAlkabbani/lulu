@@ -174,7 +174,7 @@ Why:
 
 How:
 
-- keep text-input mode separate and unchanged
+- keep the continuous and turn-based voice paths aligned under the same controller surface
 - introduce explicit runtime states such as:
   - `passive_listening`
   - `wake_detected`
@@ -242,7 +242,7 @@ How:
 - document the passive `hey lulu` wake flow
 - explain the 12-second follow-up window
 - document that Lulu suppresses wake detection during and shortly after its own speech
-- note that text-input mode still exists for testing
+- note that turn-based voice mode remains available for troubleshooting
 
 ### 6. Tests
 
@@ -310,7 +310,7 @@ Recommended approach:
 - if Lulu is still within cooldown, passive scans must not activate the wake path
 - if the conversation window is active but the next capture has no transcript, keep the window alive only until timeout; do not reset it on silence alone
 - if a follow-up utterance starts near the end of the window, prefer completing that utterance rather than cutting it off mid-capture
-- if text-input mode is used, continuous listening logic should stay bypassed
+- if turn-based mode is used, continuous listening logic should stay bypassed
 
 ## Verification Steps
 

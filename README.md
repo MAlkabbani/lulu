@@ -74,7 +74,6 @@ Helpful variants:
 ```bash
 ./scripts/install_lulu.sh --dry-run
 ./scripts/start_lulu.sh --check
-./scripts/start_lulu.sh --mode text
 ./scripts/start_lulu.sh --mode turn-based
 ```
 
@@ -140,8 +139,7 @@ Stage 2 of the desktop-app roadmap adds a thin native SwiftUI shell under `macos
 Current preview scope:
 
 - launches the local Python backend service
-- starts text mode through the new local API
-- renders transcript, streamed response, diagnostics, and settings
+- renders transcript, streamed response, diagnostics, and settings for voice runtimes
 - keeps the current Python backend as the source of truth
 
 See [macos_app/README.md](./macos_app/README.md) for the preview structure and local validation notes.
@@ -151,7 +149,6 @@ See [macos_app/README.md](./macos_app/README.md) for the preview structure and l
 ### Runtime Modes
 
 - `voice`: always-on passive listening with wake detection
-- `text`: typed-input mode for fast router and memory iteration
 - `turn-based`: one-turn microphone mode for troubleshooting
 
 ### Memory Paths
@@ -324,7 +321,7 @@ Microphone
   -> TerminalUI
      -> live observability
   -> macos_app
-     -> thin SwiftUI shell for text-first desktop interaction
+     -> thin SwiftUI shell for voice-first desktop interaction
 ```
 
 ## Repository Structure

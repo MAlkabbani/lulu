@@ -372,7 +372,7 @@ Example request:
 
 ```json
 {
-  "mode": "voice"
+  "mode": "continuous"
 }
 ```
 
@@ -399,50 +399,23 @@ Example response:
 ```json
 {
   "api_version": "v1",
-  "mode": "voice",
-  "state": "listening",
+  "mode": "listening",
+  "runtime_mode": "continuous",
+  "status_line": "Waiting for 'hey lulu'...",
   "degraded": false,
-  "last_error": null
+  "last_error": ""
 }
 ```
 
 ### Turn And Conversation Endpoints
 
-#### `POST /v1/turns/text`
-
-Purpose:
-
-- submit a typed text turn using the existing router and memory behavior
-
-Example request:
-
-```json
-{
-  "request_id": "2e34bc6e-2e1b-45f6-94cd-7b2f3ce095e9",
-  "text": "Remember that I prefer jasmine tea."
-}
-```
-
-Example response:
-
-```json
-{
-  "api_version": "v1",
-  "accepted": true,
-  "request_id": "2e34bc6e-2e1b-45f6-94cd-7b2f3ce095e9"
-}
-```
-
-Notes:
-
-- final user-visible transcript, reply text, memory actions, and TTS progress should arrive over the WebSocket event stream
-- the request/accept pattern keeps the control plane stable even if the turn becomes multi-stage
+Typed text-turn submission has been removed from the runtime surface. Conversation turns now enter through the existing voice pipeline only, with transcript, reply, memory, and TTS state continuing to arrive over the WebSocket event stream and runtime diagnostics snapshot.
 
 #### `POST /v1/mode`
 
 Purpose:
 
-- switch between `text`, `turn_based`, and `voice`
+- switch between `continuous` and `turn-based`
 
 Rules:
 
@@ -575,7 +548,6 @@ The first-class desktop client should have these surfaces:
 Must support:
 
 - voice mode
-- text mode
 - clear state badges:
   - ready
   - listening

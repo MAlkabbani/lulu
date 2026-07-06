@@ -94,13 +94,13 @@ parse_env_file() {
 
 usage() {
   cat <<'EOF'
-Usage: scripts/start_lulu.sh [--mode voice|text|turn-based] [--check] [-- <extra app args>]
+Usage: scripts/start_lulu.sh [--mode voice|turn-based] [--check] [-- <extra app args>]
 
 Startup wrapper for Lulu VAIA with prerequisite checks, optional Ollama bootstrap,
 foreground monitoring, and graceful shutdown handling.
 
 Options:
-  --mode voice|text|turn-based  Launch mode. Default: voice.
+  --mode voice|turn-based       Launch mode. Default: voice.
   --check                       Validate prerequisites and exit without starting the app.
   -h, --help                    Show this help message.
 
@@ -140,9 +140,6 @@ done
 
 case "${MODE}" in
   voice)
-    ;;
-  text)
-    APP_ARGS+=("--text-input")
     ;;
   turn-based)
     APP_ARGS+=("--turn-based")

@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable, Iterator
-import json
 import threading
 from time import perf_counter, sleep
-import urllib.request
 
 from audio_handler import (
     AudioCaptureError,
@@ -24,32 +22,6 @@ from llm_router import HybridRouter
 from memory_manager import MemoryManager
 from ollama_client import OllamaClient, OllamaClientError
 from terminal_ui import TerminalUI
-
-
-# #region debug-point A:desktop-input-wake
-def _debug_emit(hypothesis_id: str, location: str, msg: str, data: dict[str, object] | None = None) -> None:
-    payload = {
-        "sessionId": "desktop-input-wake",
-        "runId": "pre-fix",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "msg": f"[DEBUG] {msg}",
-        "data": data or {},
-    }
-    try:
-        urllib.request.urlopen(  # noqa: S310
-            urllib.request.Request(
-                "http://127.0.0.1:7777/event",
-                data=json.dumps(payload).encode(),
-                headers={"Content-Type": "application/json"},
-            ),
-            timeout=0.2,
-        ).read()
-    except Exception:
-        return
-
-
-# #endregion
 
 
 class RuntimeController:
@@ -75,7 +47,6 @@ class RuntimeController:
         self.event_bus = event_bus or EventBus()
         self.snapshot = RuntimeSnapshot()
         self.recent_spoken_chunks: deque[tuple[str, float]] = deque(maxlen=12)
-        self._turn_lock = threading.Lock()
         self._bootstrapped = False
         self._runtime_thread: threading.Thread | None = None
         self._runtime_stop_event: threading.Event | None = None
@@ -101,11 +72,10 @@ class RuntimeController:
         self.tts.set_on_chunk_spoken(on_chunk_spoken)
         self.tts.set_on_chunk_error(on_chunk_error)
 
-    def bootstrap(self, text_input_mode: bool) -> bool:
+    def bootstrap(self) -> bool:
         ready = bootstrap_connection(
             self.ollama_client,
             self.ui,
-            text_input_mode=text_input_mode,
             event_bus=self.event_bus,
         )
         self.snapshot = RuntimeSnapshot(
@@ -187,16 +157,19 @@ class RuntimeController:
         publish_runtime_state(self.ui, self.event_bus)
 
     def start_runtime(self, mode: str) -> RuntimeSnapshot:
-        text_input_mode = mode == "text"
-        if not self._bootstrapped and not self.bootstrap(text_input_mode=text_input_mode):
+        if mode not in {"continuous", "turn-based"}:
+            set_ui_mode(
+                self.ui,
+                "runtime_error",
+                f"Unsupported runtime mode: {mode}.",
+                event_bus=self.event_bus,
+            )
+            self.snapshot = self.get_state()
+            return self.snapshot
+        if not self._bootstrapped and not self.bootstrap():
             self.snapshot = self.get_state()
             return self.snapshot
         self._stop_background_runtime()
-        if mode == "text":
-            self.set_runtime_mode(mode)
-            set_ui_mode(self.ui, "ready", "Runtime started in text mode.", event_bus=self.event_bus)
-            self.snapshot = self.get_state()
-            return self.snapshot
         if not self._ensure_voice_runtime_ready():
             self.snapshot = self.get_state()
             return self.snapshot
@@ -217,24 +190,6 @@ class RuntimeController:
         selected_mode = mode or self.ui.state.runtime_mode
         self.stop_runtime()
         return self.start_runtime(selected_mode)
-
-    def submit_text_turn(self, transcript: str) -> None:
-        with self._turn_lock:
-            process_transcript_turn(
-                transcript=transcript,
-                settings=self.settings,
-                router=self.router,
-                ollama_client=self.ollama_client,
-                tts=self.tts,
-                ui=self.ui,
-                event_bus=self.event_bus,
-            )
-            self.snapshot = self.get_state()
-
-    def submit_text_turn_async(self, transcript: str) -> threading.Thread:
-        worker = threading.Thread(target=self.submit_text_turn, args=(transcript,), daemon=True)
-        worker.start()
-        return worker
 
     def _start_background_runtime(self, mode: str) -> None:
         stop_event = threading.Event()
@@ -261,7 +216,6 @@ class RuntimeController:
         try:
             self.audio_handler.ensure_transcription_ready()
         except AudioTranscriptionError as exc:
-            self.set_runtime_mode("text")
             handle_dependency_failure(
                 self.ui,
                 "stt_error",
@@ -321,33 +275,21 @@ class RuntimeController:
     def run(
         self,
         *,
-        text_input_mode: bool,
         turn_based: bool,
-        bootstrap_fn: Callable[[OllamaClient, TerminalUI, bool], bool] | None = None,
+        bootstrap_fn: Callable[[OllamaClient, TerminalUI], bool] | None = None,
     ) -> None:
         self.ui.start()
         try:
             bootstrap_call = bootstrap_fn or (
-                lambda ollama_client, ui, text_input_mode: bootstrap_connection(
+                lambda ollama_client, ui: bootstrap_connection(
                     ollama_client,
                     ui,
-                    text_input_mode=text_input_mode,
                     event_bus=self.event_bus,
                 )
             )
-            if not bootstrap_call(self.ollama_client, self.ui, text_input_mode):
+            if not bootstrap_call(self.ollama_client, self.ui):
                 return
-            if text_input_mode:
-                self.ui.set_runtime_mode("text")
-                run_text_loop(
-                    self.settings,
-                    self.router,
-                    self.ollama_client,
-                    self.tts,
-                    self.ui,
-                    event_bus=self.event_bus,
-                )
-            elif turn_based or not self.settings.continuous_listening_enabled:
+            if turn_based or not self.settings.continuous_listening_enabled:
                 self.ui.set_runtime_mode("turn-based")
                 if turn_based:
                     self.ui.log_event("Turn-based troubleshooting mode enabled.")
@@ -527,34 +469,6 @@ def record_latency(
         )
 
 
-def run_text_loop(
-    settings: Settings,
-    router: HybridRouter,
-    ollama_client: OllamaClient,
-    tts: MacOSTTS,
-    ui: TerminalUI,
-    *,
-    event_bus: EventBus | None = None,
-) -> None:
-    while True:
-        set_ui_mode(ui, "idle", "Waiting for the next text turn.", event_bus=event_bus)
-        transcript = ui.prompt_text()
-        if not transcript:
-            ui.log_event("Text input was empty.")
-            continue
-        record_latency(ui, "capture", 0.0, event_bus=event_bus)
-        ui.log_event("Accepted text input.")
-        process_transcript_turn(
-            transcript=transcript,
-            settings=settings,
-            router=router,
-            ollama_client=ollama_client,
-            tts=tts,
-            ui=ui,
-            event_bus=event_bus,
-        )
-
-
 def run_turn_based_voice_loop(
     settings: Settings,
     audio_handler: AudioHandler,
@@ -704,18 +618,6 @@ def run_continuous_voice_loop(
         )
         set_wake_guidance(ui, build_wake_guidance(settings), event_bus=event_bus)
         audio, capture_failed = capture_audio(audio_handler.record_wake_scan, ui, event_bus=event_bus)
-        # #region debug-point C:wake-capture
-        _debug_emit(
-            "C",
-            "app_core/runtime_controller.py:706",
-            "wake scan capture result",
-            {
-                "capture_failed": capture_failed,
-                "audio_is_none": audio is None,
-                "audio_len": 0 if audio is None else int(len(audio)),
-            },
-        )
-        # #endregion
         if capture_failed:
             sleep(0.2)
             continue
@@ -723,23 +625,6 @@ def run_continuous_voice_loop(
             continue
 
         wake_analysis = audio_handler.analyze_wake_audio(audio)
-        # #region debug-point D:wake-analysis
-        _debug_emit(
-            "D",
-            "app_core/runtime_controller.py:724",
-            "wake analysis complete",
-            {
-                "candidate": wake_analysis.candidate,
-                "fast_path_eligible": wake_analysis.fast_path_eligible,
-                "confidence": round(wake_analysis.confidence, 4),
-                "threshold": round(wake_analysis.dynamic_threshold, 4),
-                "acoustic_score": round(wake_analysis.acoustic_score, 4),
-                "dtw_score": round(wake_analysis.dtw_score, 4),
-                "reason": wake_analysis.reason,
-                "feature_frames": wake_analysis.feature_frames,
-            },
-        )
-        # #endregion
         record_latency(ui, "wake_audio", wake_analysis.latency_ms / 1000.0, event_bus=event_bus)
         set_wake_signal_metrics(
             ui,
@@ -823,17 +708,6 @@ def run_continuous_voice_loop(
             wake_scan=True,
             event_bus=event_bus,
         )
-        # #region debug-point E:wake-transcript
-        _debug_emit(
-            "E",
-            "app_core/runtime_controller.py:794",
-            "wake transcription result",
-            {
-                "transcript_len": len(transcript),
-                "transcript_preview": transcript[:80],
-            },
-        )
-        # #endregion
         if not transcript:
             ui.set_response("Wake scan produced no transcript. Listening again...")
             set_wake_guidance(
@@ -844,20 +718,6 @@ def run_continuous_voice_loop(
             continue
 
         wake_match = audio_handler.match_wake_phrase(transcript, analysis=wake_analysis)
-        # #region debug-point F:wake-match
-        _debug_emit(
-            "F",
-            "app_core/runtime_controller.py:810",
-            "wake match result",
-            {
-                "matched": wake_match.matched,
-                "score": round(wake_match.score, 4),
-                "reason": wake_match.reason,
-                "matched_prefix": wake_match.matched_prefix,
-                "remainder_len": len(wake_match.remainder),
-            },
-        )
-        # #endregion
         if should_suppress_self_audio_echo(
             transcript=transcript,
             last_assistant_reply=last_assistant_reply,
@@ -1033,7 +893,6 @@ def transcribe_audio(
 def bootstrap_connection(
     ollama_client: OllamaClient,
     ui: TerminalUI,
-    text_input_mode: bool,
     *,
     event_bus: EventBus | None = None,
 ) -> bool:
@@ -1045,7 +904,7 @@ def bootstrap_connection(
             event_bus.publish(make_event("error.reported", mode="startup_error", detail=str(exc)))
         return False
 
-    ui.set_connection(version=str(version.get("version", "unknown")), text_input_mode=text_input_mode)
+    ui.set_connection(version=str(version.get("version", "unknown")))
     if event_bus is not None:
         publish_runtime_state(ui, event_bus, version=str(version.get("version", "unknown")))
     return True

@@ -102,12 +102,6 @@ This wrapper:
 
 ### Alternate modes
 
-Text mode:
-
-```bash
-./scripts/start_lulu.sh --mode text
-```
-
 Turn-based troubleshooting:
 
 ```bash
@@ -152,7 +146,7 @@ Default behavior:
 
 1. binds to `127.0.0.1:8765` by default when started directly from the CLI
 2. requires a bearer token for every HTTP request and WebSocket connection
-3. exposes runtime state, dependency health, settings persistence, text-turn submission, and PDF job status endpoints
+3. exposes runtime state, dependency health, settings persistence, and PDF job status endpoints
 4. streams runtime events over WebSocket for future GUI consumers
 
 ### Service endpoints
@@ -166,7 +160,6 @@ Default behavior:
 - `POST /v1/runtime/restart`
 - `GET /v1/runtime/state`
 - `GET /v1/runtime/diagnostics`
-- `POST /v1/turns/text`
 - `POST /v1/mode`
 - `POST /v1/pdf-audiobook/jobs`
 - `GET /v1/pdf-audiobook/jobs/{job_id}`
@@ -189,13 +182,13 @@ The service emits versioned JSON envelopes carrying runtime events such as trans
 
 ### Runtime diagnostics snapshot
 
-`GET /v1/runtime/diagnostics` returns a backend-owned snapshot of the current voice/text runtime state, including wake guidance, recent wake attempts, latency samples, routing and memory summaries, and TTS progress counters. The SwiftUI shell uses this to refresh parity with the terminal dashboard without guessing state from incremental events alone.
+`GET /v1/runtime/diagnostics` returns a backend-owned snapshot of the current voice runtime state, including wake guidance, recent wake attempts, latency samples, routing and memory summaries, and TTS progress counters. The SwiftUI shell uses this to refresh parity with the terminal dashboard without guessing state from incremental events alone.
 
 ## macOS Desktop Shell Preview
 
 ### Scope
 
-The Stage 2 desktop preview lives in `macos_app/` and currently focuses on a text-first developer workflow. It is not yet the packaged end-user `.app`.
+The Stage 2 desktop preview lives in `macos_app/` and currently focuses on voice-mode diagnostics and control from a thin native shell. It is not yet the packaged end-user `.app`.
 
 ### Validate the SwiftUI shell source
 

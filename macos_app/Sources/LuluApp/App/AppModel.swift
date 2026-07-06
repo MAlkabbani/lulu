@@ -13,10 +13,8 @@ final class AppModel: ObservableObject {
     @Published var settingsSaveMessage = ""
     @Published var transcript = ""
     @Published var response = ""
-    @Published var composeText = ""
     @Published var eventLog: [String] = []
     @Published var diagnosticsNote = ""
-    @Published var isSubmitting = false
     @Published var wakeGuidance = "Say the wake phrase, pause briefly, then speak your request."
     @Published var conversationWindowRemaining: Double?
     @Published var cooldownRemaining: Double?
@@ -50,8 +48,7 @@ final class AppModel: ObservableObject {
             backendHealthy = true
             connectionStatus = "Backend healthy. Connecting runtime events..."
             await attachEvents()
-            connectionStatus = "Backend healthy. Starting text mode..."
-            runtimeState = try await backend.startRuntime(mode: "text")
+            connectionStatus = "Backend healthy. Loading runtime state..."
             async let fetchedSettings = backend.fetchSettings()
             async let fetchedDependencies = backend.fetchDependencies()
             async let fetchedState = backend.fetchRuntimeState()
@@ -64,7 +61,7 @@ final class AppModel: ObservableObject {
             if let settings {
                 settingsDraft = SettingsDraft(from: settings)
             }
-            connectionStatus = "Desktop shell connected to Lulu backend."
+            connectionStatus = "Desktop shell connected to Lulu backend. Start a voice runtime when ready."
             appendEvent("Desktop shell bootstrapped successfully.")
         } catch {
             backendHealthy = false
@@ -106,30 +103,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func submitTextTurn() async {
-        guard await ensureBackendReady(for: "Text turn") else {
-            return
-        }
-        let trimmed = composeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return
-        }
-        isSubmitting = true
-        response = ""
-        transcript = trimmed
-        appendEvent("Queued text turn from desktop shell.")
-        let requestID = UUID().uuidString
-        composeText = ""
-        do {
-            _ = try await backend.submitTextTurn(requestID: requestID, text: trimmed)
-            appendEvent("Text turn accepted by backend.")
-        } catch {
-            diagnosticsNote = "Submit failed: \(error.localizedDescription)"
-            appendEvent("Text turn failed: \(error.localizedDescription)")
-            isSubmitting = false
-        }
-    }
-
     func saveSettings() async {
         guard await ensureBackendReady(for: "Settings save") else {
             return
@@ -158,10 +131,6 @@ final class AppModel: ObservableObject {
             }
         }
         websocketConnected = true
-    }
-
-    func startTextMode() async {
-        await startRuntime(mode: "text", successMessage: "Text runtime ready.")
     }
 
     func startContinuousVoiceMode() async {
@@ -236,14 +205,13 @@ final class AppModel: ObservableObject {
             if let decision = event.payload["last_wake_decision"]?.stringValue {
                 wakeAttempt.decision = decision
             }
-            runtimeActive = (runtimeState?.runtimeMode != "text") && (runtimeState?.mode != "idle")
+            runtimeActive = runtimeState?.mode != "idle"
             appendEvent("Runtime changed: \(event.payload["status_line"]?.stringValue ?? event.eventType)")
         case "transcript.updated":
             transcript = event.payload["transcript"]?.stringValue ?? transcript
         case "response.partial", "response.final":
             response = event.payload["text"]?.stringValue ?? response
             if event.eventType == "response.final" {
-                isSubmitting = false
                 appendEvent("Received final backend response.")
             }
         case "memory.saved":
@@ -299,7 +267,6 @@ final class AppModel: ObservableObject {
         case "error.reported":
             diagnosticsNote = event.payload["detail"]?.stringValue ?? "Unknown backend error"
             appendEvent("Backend error: \(diagnosticsNote)")
-            isSubmitting = false
         default:
             appendEvent("Event: \(event.eventType)")
         }

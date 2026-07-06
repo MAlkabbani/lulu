@@ -40,7 +40,7 @@ Microphone
 - `main.py`: CLI bootstrap and adapter over the extracted runtime controller
 - `config.py`: environment-backed runtime settings, app-path defaults, and wake guidance text
 - `app_core/`: runtime controller, event bus, path policy, dependency probes, and reusable runtime models
-- `macos_app/`: thin SwiftUI desktop shell for text-first desktop interaction, diagnostics, and settings
+- `macos_app/`: thin SwiftUI desktop shell for voice controls, diagnostics, and settings
 - `audio_handler.py`: microphone capture, transcription, TTS chunking, and playback coordination
 - `pdf_audiobook.py`: offline PDF validation, text cleanup, sectioning, local audiobook export, and export playback helpers
 - `wake_detection.py`: acoustic wake matching, scoring, and fast-path eligibility

@@ -20,8 +20,7 @@ class FakeController:
             logs_path=tmp_path / "logs",
             exports_path=tmp_path / "exports",
         )
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode="text", status_line="Ready", degraded=False)
-        self.submitted_turns: list[str] = []
+        self._state = RuntimeSnapshot(mode="ready", runtime_mode="continuous", status_line="Ready", degraded=False)
 
     def get_state(self) -> RuntimeSnapshot:
         return self._state
@@ -49,18 +48,13 @@ class FakeController:
     def set_runtime_mode(self, mode: str) -> None:
         self._state = RuntimeSnapshot(mode=self._state.mode, runtime_mode=mode, status_line=self._state.status_line)
 
-    def submit_text_turn_async(self, text: str):
-        self.submitted_turns.append(text)
-        self.event_bus.publish(make_event("response.final", text=f"Echo: {text}"))
-        return None
-
     def get_diagnostics(self) -> dict[str, object]:
         return {
             "mode": self._state.mode,
             "runtime_mode": self._state.runtime_mode,
             "status_line": self._state.status_line,
             "last_error": self._state.last_error,
-            "runtime_active": self._state.runtime_mode != "text",
+            "runtime_active": False,
             "transcript": "hello",
             "response": "Echo: hello",
             "invocation_summary": "No backend action requested.",
@@ -131,22 +125,6 @@ def test_dependencies_endpoint_returns_health_payload(tmp_path: Path) -> None:
     assert body["chat_model_available"] is True
 
 
-def test_text_turn_endpoint_accepts_and_queues_turn(tmp_path: Path) -> None:
-    controller = FakeController(tmp_path)
-    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
-    client = TestClient(app)
-
-    response = client.post(
-        "/v1/turns/text",
-        headers=auth_headers(),
-        json={"request_id": "req-1", "text": "hello service"},
-    )
-
-    assert response.status_code == 200
-    assert response.json()["accepted"] is True
-    assert controller.submitted_turns == ["hello service"]
-
-
 def test_mode_endpoint_updates_runtime_mode(tmp_path: Path) -> None:
     controller = FakeController(tmp_path)
     app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
@@ -158,6 +136,15 @@ def test_mode_endpoint_updates_runtime_mode(tmp_path: Path) -> None:
     assert response.json()["runtime_mode"] == "turn-based"
 
 
+def test_runtime_start_rejects_removed_text_mode(tmp_path: Path) -> None:
+    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+
+    response = client.post("/v1/runtime/start", headers=auth_headers(), json={"mode": "text"})
+
+    assert response.status_code == 422
+
+
 def test_runtime_diagnostics_endpoint_returns_snapshot_payload(tmp_path: Path) -> None:
     app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
     client = TestClient(app)
@@ -166,7 +153,7 @@ def test_runtime_diagnostics_endpoint_returns_snapshot_payload(tmp_path: Path) -
 
     assert response.status_code == 200
     body = response.json()
-    assert body["runtime_mode"] == "text"
+    assert body["runtime_mode"] == "continuous"
     assert body["memory_hit_count"] == 1
     assert body["latencies_ms"]["total"] == 123.0
     assert body["recent_saves"] == ["remembered birthday"]

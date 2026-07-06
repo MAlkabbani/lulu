@@ -179,13 +179,6 @@ actor BackendServiceCoordinator {
         return try await execute(request: request, decodeAs: RuntimeStateResponse.self)
     }
 
-    func submitTextTurn(requestID: String, text: String) async throws -> AcceptedResponse {
-        var request = makeRequest(path: "/v1/turns/text", method: "POST")
-        request.httpBody = try JSONEncoder().encode(["request_id": requestID, "text": text])
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        return try await execute(request: request, decodeAs: AcceptedResponse.self)
-    }
-
     func connectEvents(onEvent: @escaping @Sendable (RuntimeEventEnvelope) -> Void) -> Task<Void, Never> {
         let request = makeRequest(url: configuration.webSocketURL, method: "GET")
         let webSocket = session.webSocketTask(with: request)
