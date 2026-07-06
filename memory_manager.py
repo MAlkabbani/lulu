@@ -371,6 +371,8 @@ class MemoryManager:
             ids, documents, distances, metadatas, strict=False
         ):
             metadata = metadata or {}
+            if not bool(metadata.get("is_current_revision", True)):
+                continue
             existing_normalized = str(metadata.get("normalized_text", ""))
             similarity = self._similarity_from_distance(distance)
             hit = MemoryHit(

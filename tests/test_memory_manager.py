@@ -160,6 +160,41 @@ def test_conflicting_memory_preserves_revision_history_when_semantically_close()
     assert collection.records[second.memory_id].metadata["supersedes_memory_id"] == first.memory_id
 
 
+def test_upsert_memory_does_not_reactivate_superseded_revision_candidates() -> None:
+    collection = FakeCollection()
+    model_client = FakeModelClient(
+        embedding_map={
+            "My favorite tea is jasmine": [0.10],
+            "My favorite tea is mint": [0.15],
+        },
+        tag_map={
+            "My favorite tea is jasmine": ["tea", "preference"],
+            "My favorite tea is mint": ["tea", "preference"],
+        },
+    )
+    manager = MemoryManager(build_settings(), model_client, collection=collection)
+
+    first = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
+    second = manager.upsert_memory("My favorite tea is mint", source="tool_call")
+    third = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
+
+    root_id = collection.records[second.memory_id].metadata["revision_root_id"]
+    current_revision_ids = [
+        record.id
+        for record in collection.records.values()
+        if record.metadata.get("revision_root_id") == root_id
+        and record.metadata.get("is_current_revision") is True
+    ]
+
+    assert second.action == "revised"
+    assert third.action == "revised"
+    assert first.memory_id != third.memory_id
+    assert collection.records[first.memory_id].metadata["is_current_revision"] is False
+    assert collection.records[second.memory_id].metadata["is_current_revision"] is False
+    assert collection.records[third.memory_id].metadata["is_current_revision"] is True
+    assert current_revision_ids == [third.memory_id]
+
+
 def test_classification_fallback_uses_general_tag() -> None:
     collection = FakeCollection()
     model_client = FakeModelClient(

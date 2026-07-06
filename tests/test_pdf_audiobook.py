@@ -12,8 +12,11 @@ from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from pdf_audiobook import (
+    InputValidationError,
     PDFProcessingError,
     PlaybackError,
+    _command_timeout_seconds,
+    _resolve_relative_paths,
     apply_pronunciation_overrides,
     build_audiobook_from_args,
     build_ffmpeg_command,
@@ -81,6 +84,20 @@ def test_validate_input_pdf_rejects_non_pdf_extension(tmp_path: Path) -> None:
 
     with pytest.raises(Exception, match=r"\.pdf"):
         validate_input_pdf(wrong_file)
+
+
+@pytest.mark.parametrize("raw_value", ["0", "-3"])
+def test_command_timeout_seconds_requires_positive_integer(
+    monkeypatch,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("LULU_TEST_TIMEOUT", raw_value)
+
+    with pytest.raises(
+        InputValidationError,
+        match="must be a positive integer number of seconds",
+    ):
+        _command_timeout_seconds("LULU_TEST_TIMEOUT", 5)
 
 
 def test_extract_workflow_rejects_encrypted_pdf(tmp_path: Path) -> None:
@@ -554,6 +571,18 @@ def test_play_export_directory_rejects_manifest_path_traversal(monkeypatch, tmp_
     assert playback_mode == "text"
     assert played_paths == [text_dir / "01-section.txt"]
     assert all(str(outside_path) not in command for command in recorded_commands)
+
+
+def test_resolve_relative_paths_ignores_directory_entries(tmp_path: Path) -> None:
+    export_dir = tmp_path / "book"
+    text_dir = export_dir / "text"
+    text_dir.mkdir(parents=True)
+    valid_file = text_dir / "01-section.txt"
+    valid_file.write_text("Hello from text export.", encoding="utf-8")
+
+    resolved = _resolve_relative_paths(export_dir, [".", "", "text/01-section.txt"])
+
+    assert resolved == [valid_file]
 
 
 def test_play_export_directory_reports_malformed_manifest(tmp_path: Path) -> None:

@@ -52,11 +52,16 @@ TITLE_CONNECTOR_WORDS = {
 def _command_timeout_seconds(env_name: str, default: int) -> int:
     raw_value = os.getenv(env_name, str(default)).strip()
     try:
-        return int(raw_value)
+        parsed = int(raw_value)
     except ValueError as exc:
         raise InputValidationError(
             f"{env_name} must be an integer number of seconds, got {raw_value!r}."
         ) from exc
+    if parsed <= 0:
+        raise InputValidationError(
+            f"{env_name} must be a positive integer number of seconds, got {parsed}."
+        )
+    return parsed
 
 
 class PDFToAudiobookError(RuntimeError):
@@ -1230,7 +1235,7 @@ def _resolve_relative_paths(output_dir: Path, values: object) -> list[Path]:
         path = (output_dir / candidate).resolve()
         if not str(path).startswith(str(output_root) + os.sep) and path != output_root:
             continue
-        if path.exists():
+        if path.is_file():
             resolved_paths.append(path)
     return resolved_paths
 
