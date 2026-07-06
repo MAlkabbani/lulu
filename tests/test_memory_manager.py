@@ -23,7 +23,7 @@ class FakeCollection:
 
     def upsert(self, ids, documents, embeddings, metadatas) -> None:  # noqa: ANN001
         for memory_id, document, embedding, metadata in zip(
-            ids, documents, embeddings, metadatas
+            ids, documents, embeddings, metadatas, strict=False
         ):
             self.records[memory_id] = StoredRecord(
                 id=memory_id,
@@ -42,9 +42,7 @@ class FakeCollection:
         return {
             "ids": [[record.id for record in ranked]],
             "documents": [[record.document for record in ranked]],
-            "distances": [
-                [abs(query_embedding[0] - record.embedding[0]) for record in ranked]
-            ],
+            "distances": [[abs(query_embedding[0] - record.embedding[0]) for record in ranked]],
             "metadatas": [[record.metadata for record in ranked]],
         }
 
@@ -130,10 +128,13 @@ def test_near_duplicate_updates_existing_canonical_record() -> None:
     assert second.revision_count == 2
     assert collection.count() == 1
     assert collection.records[first.memory_id].document == "My favorite tea is jasmine."
-    assert collection.records[first.memory_id].metadata["previous_text"] == "My favorite tea is jasmine"
+    assert (
+        collection.records[first.memory_id].metadata["previous_text"]
+        == "My favorite tea is jasmine"
+    )
 
 
-def test_conflicting_memory_uses_latest_wins_when_semantically_close() -> None:
+def test_conflicting_memory_preserves_revision_history_when_semantically_close() -> None:
     collection = FakeCollection()
     model_client = FakeModelClient(
         embedding_map={
@@ -150,10 +151,48 @@ def test_conflicting_memory_uses_latest_wins_when_semantically_close() -> None:
     first = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
     second = manager.upsert_memory("My favorite tea is mint", source="tool_call")
 
-    assert second.action == "updated"
-    assert first.memory_id == second.memory_id
-    assert collection.count() == 1
-    assert collection.records[first.memory_id].document == "My favorite tea is mint"
+    assert second.action == "revised"
+    assert first.memory_id != second.memory_id
+    assert collection.count() == 2
+    assert collection.records[first.memory_id].document == "My favorite tea is jasmine"
+    assert collection.records[first.memory_id].metadata["is_current_revision"] is False
+    assert collection.records[second.memory_id].document == "My favorite tea is mint"
+    assert collection.records[second.memory_id].metadata["supersedes_memory_id"] == first.memory_id
+
+
+def test_upsert_memory_does_not_reactivate_superseded_revision_candidates() -> None:
+    collection = FakeCollection()
+    model_client = FakeModelClient(
+        embedding_map={
+            "My favorite tea is jasmine": [0.10],
+            "My favorite tea is mint": [0.15],
+        },
+        tag_map={
+            "My favorite tea is jasmine": ["tea", "preference"],
+            "My favorite tea is mint": ["tea", "preference"],
+        },
+    )
+    manager = MemoryManager(build_settings(), model_client, collection=collection)
+
+    first = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
+    second = manager.upsert_memory("My favorite tea is mint", source="tool_call")
+    third = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
+
+    root_id = collection.records[second.memory_id].metadata["revision_root_id"]
+    current_revision_ids = [
+        record.id
+        for record in collection.records.values()
+        if record.metadata.get("revision_root_id") == root_id
+        and record.metadata.get("is_current_revision") is True
+    ]
+
+    assert second.action == "revised"
+    assert third.action == "revised"
+    assert first.memory_id != third.memory_id
+    assert collection.records[first.memory_id].metadata["is_current_revision"] is False
+    assert collection.records[second.memory_id].metadata["is_current_revision"] is False
+    assert collection.records[third.memory_id].metadata["is_current_revision"] is True
+    assert current_revision_ids == [third.memory_id]
 
 
 def test_classification_fallback_uses_general_tag() -> None:
@@ -203,7 +242,10 @@ def test_list_recent_memories_orders_by_updated_at_desc() -> None:
     )
     manager = MemoryManager(build_settings(), model_client, collection=collection)
     manager.upsert_memory("My favorite tea is jasmine", source="explicit")
-    second = manager.upsert_memory("My dentist appointment is on Friday at 2 PM.", source="tool_call")
+    second = manager.upsert_memory(
+        "My dentist appointment is on Friday at 2 PM.",
+        source="tool_call",
+    )
 
     hits = manager.list_recent_memories(limit=2)
 
@@ -251,18 +293,44 @@ def test_explain_memory_returns_auditable_metadata() -> None:
     )
     manager = MemoryManager(build_settings(), model_client, collection=collection)
     first = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
-    manager.upsert_memory("My favorite tea is mint", source="tool_call")
+    second = manager.upsert_memory("My favorite tea is mint", source="tool_call")
 
-    explanation = manager.explain_memory(first.memory_id)
+    explanation = manager.explain_memory(second.memory_id)
 
     assert explanation is not None
-    assert explanation["memory_id"] == first.memory_id
+    assert explanation["memory_id"] == second.memory_id
     assert explanation["category"] == "tea"
     assert explanation["source_label"] == "model-mediated"
     assert explanation["revision_count"] == 2
-    assert explanation["last_action"] == "updated"
+    assert explanation["last_action"] == "revised"
     assert explanation["previous_text"] == "My favorite tea is jasmine"
+    assert explanation["supersedes_memory_id"] == first.memory_id
+    assert explanation["is_current_revision"] is True
     assert "Canonical memory in category tea" in explanation["explanation"]
+
+
+def test_query_memory_prefers_latest_current_revision() -> None:
+    collection = FakeCollection()
+    model_client = FakeModelClient(
+        embedding_map={
+            "My favorite tea is jasmine": [0.10],
+            "My favorite tea is mint": [0.11],
+            "What tea do I like?": [0.11],
+        },
+        tag_map={
+            "My favorite tea is jasmine": ["tea", "preference"],
+            "My favorite tea is mint": ["tea", "preference"],
+        },
+    )
+    manager = MemoryManager(build_settings(), model_client, collection=collection)
+    manager.upsert_memory("My favorite tea is jasmine", source="explicit")
+    revised = manager.upsert_memory("My favorite tea is mint", source="tool_call")
+
+    hits = manager.query_memory("What tea do I like?")
+
+    assert len(hits) == 1
+    assert hits[0].id == revised.memory_id
+    assert hits[0].text == "My favorite tea is mint"
 
 
 def test_serialize_hit_includes_match_confidence_for_search_results() -> None:

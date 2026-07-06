@@ -1,13 +1,21 @@
 from __future__ import annotations
 
-import time
+import asyncio
+import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app_core.event_bus import EventBus
 from app_core.runtime_models import DependencyHealth, RuntimeSnapshot, make_event
 from backend_service.api_app import build_service_app
+from backend_service.websocket_events import (
+    EVENT_QUEUE_MAX_SIZE,
+    MAX_DROPPED_EVENTS,
+    WebSocketEventBridge,
+)
 from config import Settings
 
 
@@ -20,7 +28,12 @@ class FakeController:
             logs_path=tmp_path / "logs",
             exports_path=tmp_path / "exports",
         )
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode="continuous", status_line="Ready", degraded=False)
+        self._state = RuntimeSnapshot(
+            mode="ready",
+            runtime_mode="continuous",
+            status_line="Ready",
+            degraded=False,
+        )
 
     def get_state(self) -> RuntimeSnapshot:
         return self._state
@@ -35,18 +48,30 @@ class FakeController:
         )
 
     def start_runtime(self, mode: str) -> RuntimeSnapshot:
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode=mode, status_line=f"Runtime started in {mode} mode.")
+        self._state = RuntimeSnapshot(
+            mode="ready",
+            runtime_mode=mode,
+            status_line=f"Runtime started in {mode} mode.",
+        )
         return self._state
 
     def stop_runtime(self) -> RuntimeSnapshot:
-        self._state = RuntimeSnapshot(mode="idle", runtime_mode=self._state.runtime_mode, status_line="Runtime stopped.")
+        self._state = RuntimeSnapshot(
+            mode="idle",
+            runtime_mode=self._state.runtime_mode,
+            status_line="Runtime stopped.",
+        )
         return self._state
 
     def restart_runtime(self, mode: str | None = None) -> RuntimeSnapshot:
         return self.start_runtime(mode or self._state.runtime_mode)
 
     def set_runtime_mode(self, mode: str) -> None:
-        self._state = RuntimeSnapshot(mode=self._state.mode, runtime_mode=mode, status_line=self._state.status_line)
+        self._state = RuntimeSnapshot(
+            mode=self._state.mode,
+            runtime_mode=mode,
+            status_line=self._state.status_line,
+        )
 
     def get_diagnostics(self) -> dict[str, object]:
         return {
@@ -94,7 +119,11 @@ def auth_headers() -> dict[str, str]:
 
 
 def test_healthz_requires_auth(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.get("/healthz")
@@ -103,7 +132,11 @@ def test_healthz_requires_auth(tmp_path: Path) -> None:
 
 
 def test_healthz_returns_ready_status_with_auth(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.get("/healthz", headers=auth_headers())
@@ -114,7 +147,11 @@ def test_healthz_returns_ready_status_with_auth(tmp_path: Path) -> None:
 
 
 def test_dependencies_endpoint_returns_health_payload(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.get("/v1/dependencies", headers=auth_headers())
@@ -137,7 +174,11 @@ def test_mode_endpoint_updates_runtime_mode(tmp_path: Path) -> None:
 
 
 def test_runtime_start_rejects_removed_text_mode(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.post("/v1/runtime/start", headers=auth_headers(), json={"mode": "text"})
@@ -146,7 +187,11 @@ def test_runtime_start_rejects_removed_text_mode(tmp_path: Path) -> None:
 
 
 def test_runtime_diagnostics_endpoint_returns_snapshot_payload(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.get("/v1/runtime/diagnostics", headers=auth_headers())
@@ -175,6 +220,53 @@ def test_websocket_stream_serializes_runtime_events(tmp_path: Path) -> None:
     assert event["payload"]["text"] == "Hello from event bus"
 
 
+def test_websocket_stream_disconnects_slow_consumers(tmp_path: Path) -> None:
+    async def exercise() -> list[str]:
+        controller = FakeController(tmp_path)
+        bridge = WebSocketEventBridge(controller.event_bus)
+        sent_event_types: list[str] = []
+        connected = asyncio.Event()
+        release_send = asyncio.Event()
+
+        async def send_json(payload: dict[str, object]) -> None:
+            sent_event_types.append(str(payload["event_type"]))
+            if payload["event_type"] == "service.connected":
+                connected.set()
+                return
+            await release_send.wait()
+
+        task = asyncio.create_task(bridge.stream(send_json=send_json))
+        await asyncio.wait_for(connected.wait(), timeout=1.0)
+
+        publish_count = EVENT_QUEUE_MAX_SIZE + MAX_DROPPED_EVENTS + 1
+        for index in range(publish_count):
+            controller.event_bus.publish(
+                make_event("response.partial", text=f"chunk-{index}")
+            )
+
+        for _ in range(10):
+            await asyncio.sleep(0)
+
+        release_send.set()
+        await asyncio.wait_for(task, timeout=1.0)
+        return sent_event_types
+
+    observed_types = asyncio.run(exercise())
+
+    assert "service.connected" in observed_types
+    assert "service.overload" in observed_types
+
+
+def test_websocket_query_token_is_rejected(tmp_path: Path) -> None:
+    controller = FakeController(tmp_path)
+    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/v1/events/ws?token=test-token"):
+            pass
+
+
 def test_update_settings_persists_json_overlay(tmp_path: Path) -> None:
     controller = FakeController(tmp_path)
     app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
@@ -191,3 +283,44 @@ def test_update_settings_persists_json_overlay(tmp_path: Path) -> None:
     persisted = controller.settings.config_path.read_text(encoding="utf-8")
     assert '"chat_model": "llama3.2:1b"' in persisted
     assert '"practical_voice_mode": false' in persisted
+
+
+def test_update_settings_rejects_malformed_existing_json(tmp_path: Path) -> None:
+    controller = FakeController(tmp_path)
+    controller.settings.config_path.write_text("{bad json", encoding="utf-8")
+    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+
+    response = client.put(
+        "/v1/settings",
+        headers=auth_headers(),
+        json={"chat_model": "llama3.2:1b"},
+    )
+
+    assert response.status_code == 409
+    assert controller.settings.config_path.read_text(encoding="utf-8") == "{bad json"
+
+
+def test_update_settings_preserves_existing_keys_and_creates_backup(tmp_path: Path) -> None:
+    controller = FakeController(tmp_path)
+    controller.settings.config_path.write_text(
+        '{"chat_model": "old-model", "wake_phrase": "hey lulu"}',
+        encoding="utf-8",
+    )
+    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+
+    response = client.put(
+        "/v1/settings",
+        headers=auth_headers(),
+        json={"chat_model": "new-model"},
+    )
+
+    assert response.status_code == 200
+    persisted = json.loads(controller.settings.config_path.read_text(encoding="utf-8"))
+    assert persisted["chat_model"] == "new-model"
+    assert persisted["wake_phrase"] == "hey lulu"
+    backup_path = (
+        controller.settings.config_path.parent / f"{controller.settings.config_path.name}.bak"
+    )
+    assert backup_path.exists()

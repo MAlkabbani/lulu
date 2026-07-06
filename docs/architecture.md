@@ -45,7 +45,7 @@ Microphone
 - `pdf_audiobook.py`: offline PDF validation, text cleanup, sectioning, local audiobook export, and export playback helpers
 - `wake_detection.py`: acoustic wake matching, scoring, and fast-path eligibility
 - `llm_router.py`: memory recall, tool registration, validation, and bounded tool orchestration
-- `memory_manager.py`: ChromaDB persistence, deduplication, and retrieval
+- `memory_manager.py`: ChromaDB persistence, exact-duplicate collapse, revision-preserving conflicting updates, and retrieval
 - `ollama_client.py`: local Ollama transport wrapper for health checks, embeddings, and chat
 - `terminal_ui.py`: rich-based dashboard for latency, wake, memory, and response visibility
 - `backend_service/`: local authenticated HTTP + WebSocket service boundary for desktop and other local clients
@@ -68,6 +68,8 @@ Microphone
 - keep settings explicit and environment-driven
 - validate tool arguments before backend execution
 - validate file paths and reject unsupported PDF states at the boundary
+- keep local helper startup authenticated and ownership-aware before issuing privileged requests
+- bound long-lived queues and worker pools so local clients cannot exhaust the helper
 - preserve local-only operation and avoid cloud fallbacks
 - prefer focused regression tests over broad fragile suites
 - document behavior changes in `README.md` or `docs/` when runtime behavior changes

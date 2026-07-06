@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from app_core.event_bus import EventBus
 from app_core.runtime_models import DependencyHealth, RuntimeSnapshot
 from backend_service.api_app import build_service_app
 from config import Settings
+from pdf_audiobook import ServiceJobResult
 
 
 class FakeController:
@@ -22,7 +24,12 @@ class FakeController:
             logs_path=tmp_path / "logs",
             exports_path=tmp_path / "exports",
         )
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode="continuous", status_line="Ready", degraded=False)
+        self._state = RuntimeSnapshot(
+            mode="ready",
+            runtime_mode="continuous",
+            status_line="Ready",
+            degraded=False,
+        )
 
     def get_state(self) -> RuntimeSnapshot:
         return self._state
@@ -37,7 +44,11 @@ class FakeController:
         )
 
     def start_runtime(self, mode: str) -> RuntimeSnapshot:
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode=mode, status_line=f"Runtime started in {mode} mode.")
+        self._state = RuntimeSnapshot(
+            mode="ready",
+            runtime_mode=mode,
+            status_line=f"Runtime started in {mode} mode.",
+        )
         return self._state
 
     def stop_runtime(self) -> RuntimeSnapshot:
@@ -47,7 +58,12 @@ class FakeController:
         return self.start_runtime(mode or self._state.runtime_mode)
 
     def set_runtime_mode(self, mode: str) -> None:
-        self._state = RuntimeSnapshot(mode=self._state.mode, runtime_mode=mode, status_line=self._state.status_line)
+        self._state = RuntimeSnapshot(
+            mode=self._state.mode,
+            runtime_mode=mode,
+            status_line=self._state.status_line,
+        )
+
 
 def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-token"}
@@ -89,7 +105,11 @@ def write_text_pdf(path: Path, text: str) -> None:
 
 
 def test_pdf_job_create_validates_required_fields(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.post("/v1/pdf-audiobook/jobs", headers=auth_headers(), json={"pdf_path": ""})
@@ -101,7 +121,11 @@ def test_pdf_job_dry_run_completes_for_text_pdf(tmp_path: Path) -> None:
     pdf_path = tmp_path / "book.pdf"
     output_dir = tmp_path / "exports"
     write_text_pdf(pdf_path, "Chapter 1 Hello from Lulu PDF service.")
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     create = client.post(
@@ -131,7 +155,11 @@ def test_pdf_job_reports_failure_for_image_only_pdf(tmp_path: Path) -> None:
     with pdf_path.open("wb") as handle:
         writer.write(handle)
 
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
     create = client.post(
         "/v1/pdf-audiobook/jobs",
@@ -148,3 +176,115 @@ def test_pdf_job_reports_failure_for_image_only_pdf(tmp_path: Path) -> None:
     payload = wait_for_job(client, create.json()["job_id"])
     assert payload["status"] == "failed"
     assert "OCR support is deferred" in payload["error"]
+
+
+def test_pdf_job_rejects_when_queue_is_full(tmp_path: Path) -> None:
+    blocker = threading.Event()
+
+    def blocking_runner(job_id: str, request, progress):  # noqa: ANN001
+        progress("started")
+        blocker.wait(timeout=2.0)
+        return ServiceJobResult(
+            job_id=job_id,
+            status="completed",
+            dry_run=request.dry_run,
+            output_dir=Path(request.output_dir),
+            manifest_path=Path(request.output_dir) / "manifest.json",
+            error=None,
+            section_count=1,
+        )
+
+    pdf_path = tmp_path / "book.pdf"
+    output_dir = tmp_path / "exports"
+    write_text_pdf(pdf_path, "Chapter 1 Hello from Lulu PDF service.")
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+        pdf_job_runner=blocking_runner,
+        pdf_job_max_workers=1,
+        pdf_job_max_pending=1,
+    )
+    client = TestClient(app)
+
+    first = client.post(
+        "/v1/pdf-audiobook/jobs",
+        headers=auth_headers(),
+        json={
+            "pdf_path": str(pdf_path),
+            "output_dir": str(output_dir),
+            "dry_run": True,
+            "portable_format": "none",
+        },
+    )
+    second = client.post(
+        "/v1/pdf-audiobook/jobs",
+        headers=auth_headers(),
+        json={
+            "pdf_path": str(pdf_path),
+            "output_dir": str(output_dir),
+            "dry_run": True,
+            "portable_format": "none",
+        },
+    )
+    blocker.set()
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+
+def test_completed_pdf_jobs_are_evicted_after_retention(tmp_path: Path) -> None:
+    def fast_runner(job_id: str, request, progress):  # noqa: ANN001
+        progress("done")
+        return ServiceJobResult(
+            job_id=job_id,
+            status="completed",
+            dry_run=request.dry_run,
+            output_dir=Path(request.output_dir),
+            manifest_path=Path(request.output_dir) / "manifest.json",
+            error=None,
+            section_count=1,
+        )
+
+    pdf_path = tmp_path / "book.pdf"
+    output_dir = tmp_path / "exports"
+    write_text_pdf(pdf_path, "Chapter 1 Hello from Lulu PDF service.")
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+        pdf_job_runner=fast_runner,
+        pdf_job_max_workers=1,
+        pdf_job_max_pending=2,
+        pdf_job_retention_seconds=0.01,
+        pdf_job_retention_limit=1,
+    )
+    client = TestClient(app)
+
+    first = client.post(
+        "/v1/pdf-audiobook/jobs",
+        headers=auth_headers(),
+        json={
+            "pdf_path": str(pdf_path),
+            "output_dir": str(output_dir),
+            "dry_run": True,
+            "portable_format": "none",
+        },
+    )
+    first_job_id = first.json()["job_id"]
+    wait_for_job(client, first_job_id)
+    time.sleep(0.05)
+    second = client.post(
+        "/v1/pdf-audiobook/jobs",
+        headers=auth_headers(),
+        json={
+            "pdf_path": str(pdf_path),
+            "output_dir": str(output_dir),
+            "dry_run": True,
+            "portable_format": "none",
+        },
+    )
+    wait_for_job(client, second.json()["job_id"])
+
+    response = client.get(f"/v1/pdf-audiobook/jobs/{first_job_id}", headers=auth_headers())
+    assert response.status_code == 404

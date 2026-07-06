@@ -149,6 +149,8 @@ Default behavior:
 3. exposes runtime state, dependency health, settings persistence, and PDF job status endpoints
 4. streams runtime events over WebSocket for future GUI consumers
 
+When launched by the desktop shell, the helper binds first, emits a startup handshake record containing the negotiated loopback port and a startup nonce, and only then receives authenticated HTTP or WebSocket traffic from the Swift client.
+
 ### Service endpoints
 
 - `GET /healthz`
@@ -173,10 +175,9 @@ Connect to:
 ws://127.0.0.1:8765/v1/events/ws
 ```
 
-Provide either:
+Provide:
 
 - `Authorization: Bearer <launch-token>`
-- `?token=<launch-token>`
 
 The service emits versioned JSON envelopes carrying runtime events such as transcript updates, response streaming, wake attempts, TTS chunk progress, and error reports.
 
@@ -212,7 +213,7 @@ The preview shell currently assumes:
 - the backend service can be launched with `python -m backend_service.service_runner`
 - the shell can resolve the repo root from the checked-out source tree
 - the backend remains loopback-only and token-protected
-- the shell prefers port `8765` for local development, but falls back to a free loopback port if a stale backend is already listening there
+- the shell validates a startup handshake from the child process before trusting the negotiated loopback port
 
 ### Current limitation
 
@@ -299,6 +300,30 @@ Operational notes:
 - `--dry-run` writes text artifacts and `manifest.json`, but no media files
 - `manifest.json` now records workflow state for text export, audio render, and portable conversion
 - if text exists but media does not, inspect the manifest before assuming generation succeeded
+- playback rejects manifest paths that resolve outside the export root
+- malformed manifests and hung `say` / `ffmpeg` / `afplay` invocations now fail fast with operator-facing errors
+
+### Security-Oriented Environment Knobs
+
+- `MLX_WHISPER_MODEL`: local model path or `repo@revision` for pinned remote references
+- `MLX_WHISPER_REVISION`: optional pinned revision when `MLX_WHISPER_MODEL` is a remote repo id without an inline `@revision`
+- `TTS_SAY_TIMEOUT_SECONDS`: timeout for live `say` playback
+- `PDF_AUDIO_RENDER_TIMEOUT_SECONDS`: timeout for section rendering via `say`
+- `PDF_AUDIO_CONVERT_TIMEOUT_SECONDS`: timeout for `ffmpeg` portable conversion
+- `PDF_AUDIO_PLAYBACK_TIMEOUT_SECONDS`: timeout for export playback via `say` or `afplay`
+
+### CI Checks
+
+GitHub Actions now enforce the baseline quality and security checks on pull requests:
+
+- `ruff check` on changed Python files in the PR or push range
+- targeted `pytest`
+- `bandit -ll`
+- `semgrep --config auto`
+- `pip-audit -r requirements.txt`
+
+`pip-audit` currently reports a `chromadb` advisory whose published exploit path targets the Chroma server API with remote model repositories. Lulu uses the in-process `PersistentClient` path, so the advisory remains tracked and gated in CI but is not currently exposed through a reachable server endpoint in this repo.
+Bandit is configured to block medium and high severity findings while the repo keeps its already-triaged low-severity subprocess warnings on a separate cleanup track.
 
 ### Pronunciation overrides
 

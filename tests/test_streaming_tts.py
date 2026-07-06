@@ -86,12 +86,14 @@ def test_phrase_chunker_waits_for_sentence_boundary_before_force_split() -> None
     chunker = PhraseChunker(Settings())
 
     ready = chunker.push(
-        "This response keeps going without punctuation so the current chunker waits for a full sentence instead of chopping the audio early"
+        "This response keeps going without punctuation so the current "
+        "chunker waits for a full sentence instead of chopping the audio early"
     )
 
     assert ready == []
     assert chunker.finish() == [
-        "This response keeps going without punctuation so the current chunker waits for a full sentence instead of chopping the audio early"
+        "This response keeps going without punctuation so the current "
+        "chunker waits for a full sentence instead of chopping the audio early"
     ]
 
 
@@ -125,7 +127,8 @@ def test_phrase_chunker_prefers_clause_break_before_hard_split() -> None:
     )
 
     ready = chunker.push(
-        "This answer has a useful pause, so the chunker can break here before it hard splits the rest"
+        "This answer has a useful pause, so the chunker can break here "
+        "before it hard splits the rest"
     )
 
     assert ready[0] == "This answer has a useful pause,"
@@ -219,6 +222,7 @@ def test_macos_tts_queue_preserves_chunk_order(monkeypatch) -> None:
         check: bool,
         capture_output: bool,
         text: bool,
+        timeout: int,
     ) -> SimpleNamespace:
         spoken.append(command[1])
         return SimpleNamespace(returncode=0, stderr="")
@@ -246,6 +250,7 @@ def test_macos_tts_reports_failures_without_marking_chunk_spoken(monkeypatch) ->
         check: bool,
         capture_output: bool,
         text: bool,
+        timeout: int,
     ) -> SimpleNamespace:
         return SimpleNamespace(returncode=1, stderr=f"failed to speak {command[1]}")
 
@@ -266,3 +271,37 @@ def test_macos_tts_reports_failures_without_marking_chunk_spoken(monkeypatch) ->
     assert len(turn_errors) == 1
     assert reported_errors[0].chunk == "broken chunk"
     assert "failed to speak broken chunk" in str(turn_errors[0])
+
+
+def test_macos_tts_recovers_after_timeout(monkeypatch) -> None:
+    spoken: list[str] = []
+    attempts = {"count": 0}
+
+    def fake_run(
+        command: list[str],
+        check: bool,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+    ) -> SimpleNamespace:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise TimeoutExpired(command, timeout=timeout)
+        spoken.append(command[1])
+        return SimpleNamespace(returncode=0, stderr="")
+
+    from subprocess import TimeoutExpired
+
+    monkeypatch.setattr("audio_handler.subprocess.run", fake_run)
+    tts = MacOSTTS()
+
+    try:
+        first_errors = tts.speak("slow chunk")
+        second_errors = tts.speak("recovered chunk")
+    finally:
+        tts.close()
+
+    assert len(first_errors) == 1
+    assert "timed out" in str(first_errors[0]).lower()
+    assert second_errors == []
+    assert spoken == ["recovered chunk"]

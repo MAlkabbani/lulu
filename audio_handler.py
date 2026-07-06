@@ -1,22 +1,37 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from collections import deque
-from dataclasses import dataclass
-from difflib import SequenceMatcher
-from pathlib import Path
 import queue
 import re
 import subprocess
 import threading
+from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from pathlib import Path
+from typing import Any
 
 import numpy as np
-import sounddevice as sd
 from huggingface_hub import snapshot_download
-from mlx_whisper import transcribe
 
 from config import Settings
 from wake_detection import WakeAudioAnalysis, WakeWordEngine, combine_wake_confidence
+
+try:
+    import sounddevice as sd
+except (ImportError, OSError) as exc:
+    sd: Any = None
+    _SOUNDDEVICE_IMPORT_ERROR: Exception | None = exc
+else:
+    _SOUNDDEVICE_IMPORT_ERROR = None
+
+try:
+    from mlx_whisper import transcribe
+except (ImportError, OSError) as exc:
+    transcribe: Any = None
+    _MLX_WHISPER_IMPORT_ERROR: Exception | None = exc
+else:
+    _MLX_WHISPER_IMPORT_ERROR = None
 
 
 class AudioCaptureError(RuntimeError):
@@ -33,6 +48,29 @@ class TTSPlaybackError(RuntimeError):
     def __init__(self, chunk: str, message: str) -> None:
         super().__init__(message)
         self.chunk = chunk
+
+
+def audio_input_available() -> bool:
+    return sd is not None
+
+
+def _require_transcribe() -> Callable[..., Any]:
+    if transcribe is None:
+        raise AudioTranscriptionError(
+            "Local Whisper transcription is unavailable. Install the MLX "
+            "runtime and whisper dependencies before transcribing audio."
+        ) from _MLX_WHISPER_IMPORT_ERROR
+    return transcribe
+
+
+def _split_remote_model_reference(model_reference: str, revision: str) -> tuple[str, str | None]:
+    clean_reference = model_reference.strip()
+    if "@" in clean_reference:
+        repo_id, explicit_revision = clean_reference.rsplit("@", 1)
+        repo_id = repo_id.strip()
+        explicit_revision = explicit_revision.strip()
+        return repo_id, explicit_revision or None
+    return clean_reference, revision.strip() or None
 
 
 @dataclass(frozen=True)
@@ -187,7 +225,8 @@ class PhraseChunker:
 
 
 class MacOSTTS:
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self._settings = settings or Settings()
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._on_chunk_spoken: Callable[[str], None] | None = None
         self._on_chunk_error: Callable[[TTSPlaybackError], None] | None = None
@@ -242,11 +281,22 @@ class MacOSTTS:
                         check=False,
                         capture_output=True,
                         text=True,
+                        timeout=self._settings.tts_say_timeout_seconds,
                     )
                 except OSError as exc:
                     error = TTSPlaybackError(
                         chunk,
                         f"TTS playback failed because macOS 'say' could not run: {exc}",
+                    )
+                    self._record_turn_error(error)
+                    if self._on_chunk_error is not None:
+                        self._on_chunk_error(error)
+                    continue
+                except subprocess.TimeoutExpired:
+                    error = TTSPlaybackError(
+                        chunk,
+                        "TTS playback timed out while waiting for macOS 'say' to finish."
+                        f" Timeout: {self._settings.tts_say_timeout_seconds}s.",
                     )
                     self._record_turn_error(error)
                     if self._on_chunk_error is not None:
@@ -302,7 +352,7 @@ class AudioHandler:
             model_reference = self._resolve_whisper_model_reference()
             silent_audio = np.zeros(self.settings.sample_rate, dtype=np.float32)
             try:
-                transcribe(
+                _require_transcribe()(
                     silent_audio,
                     path_or_hf_repo=model_reference,
                     language=self.settings.whisper_language,
@@ -318,6 +368,12 @@ class AudioHandler:
         silence_seconds: float,
         pre_roll_chunks: int,
     ) -> np.ndarray | None:
+        if sd is None:
+            raise AudioCaptureError(
+                "Audio input dependency is unavailable. Install PortAudio "
+                "and the sounddevice runtime before recording."
+            ) from _SOUNDDEVICE_IMPORT_ERROR
+
         sample_rate = self.settings.sample_rate
         frames_per_chunk = int(sample_rate * self.settings.vad_chunk_seconds)
         max_chunks = int(max_record_seconds / self.settings.vad_chunk_seconds)
@@ -363,7 +419,8 @@ class AudioHandler:
                         break
         except Exception as exc:
             raise AudioCaptureError(
-                "Microphone capture failed. Check microphone permission and audio device availability."
+                "Microphone capture failed. Check microphone permission "
+                "and audio device availability."
             ) from exc
 
         if not speech_frames:
@@ -380,7 +437,7 @@ class AudioHandler:
         pcm_source = np.nan_to_num(pcm_source, nan=0.0, posinf=1.0, neginf=-1.0)
         pcm_source = np.clip(pcm_source, -1.0, 1.0)
         try:
-            result = transcribe(
+            result = _require_transcribe()(
                 pcm_source,
                 path_or_hf_repo=model_reference,
                 language=self.settings.whisper_language,
@@ -434,12 +491,9 @@ class AudioHandler:
             analysis=analysis,
             settings=self.settings,
         )
-        matched = (
-            transcript_match.matched
-            or (
-                transcript_match.score >= self.settings.wake_transcript_score_floor
-                and confidence >= threshold
-            )
+        matched = transcript_match.matched or (
+            transcript_match.score >= self.settings.wake_transcript_score_floor
+            and confidence >= threshold
         )
         reason = "probabilistic-match" if matched else transcript_match.reason or "below-threshold"
         return WakeMatch(
@@ -478,14 +532,24 @@ class AudioHandler:
             if self._whisper_model_path and Path(self._whisper_model_path).exists():
                 return self._whisper_model_path
 
+            repo_id, revision = _split_remote_model_reference(
+                self.settings.whisper_model,
+                self.settings.whisper_model_revision,
+            )
             try:
                 resolved_path = snapshot_download(
-                    repo_id=self.settings.whisper_model,
+                    repo_id=repo_id,
                     local_files_only=True,
+                    revision=revision,
                 )
-            except Exception:
+            except Exception as exc:
+                if revision is None:
+                    raise AudioTranscriptionError(
+                        "Remote Whisper model downloads require a pinned revision. "
+                        "Set MLX_WHISPER_MODEL to repo@revision or set MLX_WHISPER_REVISION."
+                    ) from exc
                 try:
-                    resolved_path = snapshot_download(repo_id=self.settings.whisper_model)
+                    resolved_path = snapshot_download(repo_id=repo_id, revision=revision)
                 except Exception as exc:
                     raise AudioTranscriptionError(self._format_transcription_error(exc)) from exc
 
@@ -519,7 +583,6 @@ def score_wake_phrase_match(
     best_score = 0.0
     best_end_index = 0
     best_prefix_text = ""
-    best_start_index = 0
 
     max_start_index = min(2, max(0, len(transcript_tokens) - len(wake_tokens)))
     max_window_length = len(wake_tokens) + 2
@@ -534,7 +597,6 @@ def score_wake_phrase_match(
             score = _wake_similarity_score(prefix_text, wake_phrase) - (start_index * 0.04)
             if score > best_score:
                 best_score = score
-                best_start_index = start_index
                 best_end_index = end_index
                 best_prefix_text = prefix_text
 

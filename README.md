@@ -167,6 +167,8 @@ This bypasses the chat model and writes a canonical memory entry directly.
 
 Normal user turns can recall memories, inspect recent entries, explain a prior memory hit, or save a durable fact through the validated backend tool registry.
 
+Exact duplicate facts collapse into the current canonical entry, while conflicting semantically similar facts are now preserved as revisions so Lulu can prefer the latest memory without deleting prior history.
+
 ### Offline PDF Audiobooks
 
 Lulu also ships a repo-local offline audiobook utility for text-based PDFs:

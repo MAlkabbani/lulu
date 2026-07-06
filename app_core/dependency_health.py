@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from typing import Any
 
 from app_core.runtime_models import DependencyHealth
 from config import Settings
@@ -28,7 +28,9 @@ def probe_dependency_health(
         issues.append(f"Unable to reach Ollama at {settings.ollama_base_url}.")
 
     known_models = _known_model_aliases(available_models or [])
-    chat_model_available = not known_models or _model_is_available(settings.chat_model, known_models)
+    chat_model_available = not known_models or _model_is_available(
+        settings.chat_model, known_models
+    )
     embedding_model_available = not known_models or _model_is_available(
         settings.embedding_model,
         known_models,
@@ -62,7 +64,16 @@ def probe_dependency_health(
 def _path_is_usable(path: Path | str) -> bool:
     candidate = Path(path)
     parent = candidate if candidate.exists() else candidate.parent
-    return parent.exists() and parent.is_dir()
+    if not parent.exists() or not parent.is_dir():
+        return False
+    probe_path = parent / f".lulu-healthcheck-{os.getpid()}"
+    try:
+        with probe_path.open("w", encoding="utf-8") as handle:
+            handle.write("ok")
+        probe_path.unlink(missing_ok=True)
+    except OSError:
+        return False
+    return True
 
 
 def _model_is_available(model_name: str, known_models: set[str]) -> bool:
