@@ -514,7 +514,7 @@ def test_bootstrap_connection_reports_startup_failure_when_ollama_is_down() -> N
 
     ui = TerminalUI(build_settings())
 
-    ready = _bootstrap_connection(FailingOllamaClient(), ui, text_input_mode=False)
+    ready = _bootstrap_connection(FailingOllamaClient(), ui)
 
     assert ready is False
     assert ui.state.mode == "startup_error"

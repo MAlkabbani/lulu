@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     if not launch_token:
         raise SystemExit("Provide --launch-token or set LULU_SERVICE_LAUNCH_TOKEN.")
     controller = RuntimeController(Settings())
+    controller.bootstrap()
     app = build_service_app(controller, launch_token=launch_token, enforce_loopback=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0

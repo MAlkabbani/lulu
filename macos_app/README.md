@@ -4,18 +4,16 @@ This directory contains the Stage 2 desktop-shell preview for Lulu VAIA.
 
 ## Scope
 
-The current shell is intentionally thin and text-first:
+The current shell is intentionally thin and voice-first:
 
 - launches the local Python backend service
 - performs health bootstrap and dependency reads
-- starts the backend in text mode
-- submits text turns over the local HTTP API
 - listens to streamed runtime events over WebSocket
 - surfaces Assistant, Diagnostics, and Settings views in SwiftUI
 
 The shell now also includes an early voice-mode preview surface:
 
-- start text, continuous voice, and turn-based voice runtime modes
+- start continuous voice and turn-based voice runtime modes
 - display wake guidance, wake score, cooldown, and conversation-window badges
 - map wake, latency, memory, and TTS runtime events into native diagnostics panels
 - preflight microphone authorization from the native shell before starting voice modes

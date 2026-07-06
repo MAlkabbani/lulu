@@ -30,11 +30,6 @@ from terminal_ui import TerminalUI
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Lulu VAIA local voice assistant")
     parser.add_argument(
-        "--text-input",
-        action="store_true",
-        help="Use typed input instead of microphone capture for quick testing.",
-    )
-    parser.add_argument(
         "--turn-based",
         action="store_true",
         help="Temporarily disable continuous listening and use the older one-turn voice loop.",
@@ -61,7 +56,6 @@ def main() -> None:
         ui=ui,
     )
     controller.run(
-        text_input_mode=args.text_input,
         turn_based=args.turn_based,
         bootstrap_fn=_bootstrap_connection,
     )

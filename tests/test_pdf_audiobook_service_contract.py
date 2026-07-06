@@ -22,7 +22,7 @@ class FakeController:
             logs_path=tmp_path / "logs",
             exports_path=tmp_path / "exports",
         )
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode="text", status_line="Ready", degraded=False)
+        self._state = RuntimeSnapshot(mode="ready", runtime_mode="continuous", status_line="Ready", degraded=False)
 
     def get_state(self) -> RuntimeSnapshot:
         return self._state
@@ -48,10 +48,6 @@ class FakeController:
 
     def set_runtime_mode(self, mode: str) -> None:
         self._state = RuntimeSnapshot(mode=self._state.mode, runtime_mode=mode, status_line=self._state.status_line)
-
-    def submit_text_turn_async(self, text: str):
-        return None
-
 
 def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-token"}
@@ -152,4 +148,3 @@ def test_pdf_job_reports_failure_for_image_only_pdf(tmp_path: Path) -> None:
     payload = wait_for_job(client, create.json()["job_id"])
     assert payload["status"] == "failed"
     assert "OCR support is deferred" in payload["error"]
-

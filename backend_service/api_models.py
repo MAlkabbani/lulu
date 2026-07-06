@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -61,7 +63,7 @@ class SettingsUpdateResponse(StrictModel):
 
 
 class RuntimeControlRequest(StrictModel):
-    mode: str = Field(default="text")
+    mode: Literal["continuous", "turn-based"] = "continuous"
 
 
 class RuntimeStateResponse(StrictModel):
@@ -113,20 +115,8 @@ class RuntimeDiagnosticsResponse(StrictModel):
     last_wake_feature_frames: int
 
 
-class TextTurnRequest(StrictModel):
-    request_id: str
-    text: str = Field(min_length=1)
-
-
-class AcceptedResponse(StrictModel):
-    api_version: str = API_VERSION
-    accepted: bool
-    request_id: str
-    status: str
-
-
 class ModeRequest(StrictModel):
-    mode: str = Field(min_length=1)
+    mode: Literal["continuous", "turn-based"]
 
 
 class PDFJobRequest(StrictModel):

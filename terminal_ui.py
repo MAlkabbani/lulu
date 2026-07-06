@@ -44,7 +44,6 @@ class UIState:
     recent_wake_attempts: deque[str] = field(default_factory=lambda: deque(maxlen=6))
     latencies_ms: dict[str, float] = field(default_factory=dict)
     ollama_version: str = "unknown"
-    text_input_mode: bool = False
     runtime_mode: str = "continuous"
     conversation_window_remaining: float | None = None
     cooldown_remaining: float | None = None
@@ -90,10 +89,9 @@ class TerminalUI:
     def _refresh_locked(self) -> None:
         self.live.update(self._render())
 
-    def set_connection(self, version: str, text_input_mode: bool) -> None:
+    def set_connection(self, version: str) -> None:
         with self._state_lock:
             self.state.ollama_version = version
-            self.state.text_input_mode = text_input_mode
             self.state.wake_score_threshold = self.settings.wake_match_score_threshold
             self.state.wake_guidance = build_wake_guidance(self.settings)
             self.state.status_line = f"{self.settings.app_name} is ready. Press Ctrl+C to stop."
@@ -337,16 +335,6 @@ class TerminalUI:
             self.state.action_steps = []
             self._refresh_locked()
 
-    def prompt_text(self) -> str:
-        with self._state_lock:
-            self.live.stop()
-        try:
-            return self.console.input("\nYou> ").strip()
-        finally:
-            with self._state_lock:
-                self.live.start()
-                self._refresh_locked()
-
     def apply_runtime_event(self, event: RuntimeEvent) -> None:
         if event.event_type == "runtime.state_changed":
             mode = str(event.payload.get("mode", "ready"))
@@ -466,10 +454,6 @@ class TerminalUI:
         table.add_row("Assistant", Text(self.settings.app_name, style="bold white"))
         table.add_row("Mode", self._mode_badge())
         table.add_row("Runtime", self._runtime_badge())
-        table.add_row(
-            "Input",
-            Text("text" if self.state.text_input_mode else "voice", style="bold cyan"),
-        )
         table.add_row("Ollama", Text(self.state.ollama_version, style="bold white"))
         table.add_row(
             "Voice profile",
@@ -690,8 +674,6 @@ class TerminalUI:
         return clean[: limit - 3] + "..."
 
     def _runtime_badge(self) -> Text:
-        if self.state.text_input_mode:
-            return Text("TEXT", style="bold cyan")
         if self.state.runtime_mode == "turn-based":
             return Text("TURN-BASED", style="bold yellow")
         return Text("CONTINUOUS", style="bold green")

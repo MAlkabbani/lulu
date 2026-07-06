@@ -134,7 +134,7 @@ def test_main_cleans_up_ui_and_tts_when_bootstrap_fails(monkeypatch) -> None:
     monkeypatch.setattr(
         app_main,
         "parse_args",
-        lambda: SimpleNamespace(text_input=False, turn_based=False),
+        lambda: SimpleNamespace(turn_based=False),
     )
     monkeypatch.setattr(app_main, "OllamaClient", BootstrapTestOllamaClient)
     monkeypatch.setattr(app_main, "MemoryManager", BootstrapTestMemoryManager)

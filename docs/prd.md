@@ -80,7 +80,7 @@ A developer or maintainer who needs to observe, tune, and extend the assistant's
 - Short active conversation window after wake
 - Cooldown and self-audio suppression safeguards
 - Terminal dashboard with status, latencies, memory events, and wake diagnostics
-- Text-input and turn-based fallback modes for troubleshooting
+- Turn-based fallback mode for troubleshooting
 - Read-only memory inspection utility
 
 ### 5.2 Out Of Scope For The Current Product Baseline
@@ -105,11 +105,10 @@ For user-facing operation, the current baseline distinguishes three invocation o
 - natural-language turns that may trigger validated memory tools such as `save_to_memory`, `search_memory`, `list_recent_memories`, or `explain_memory_hit`
 - normal chat turns that produce a reply without any backend action
 
-The product supports three runtime modes:
+The product supports two runtime modes:
 
 - `CONTINUOUS`: passive wake listening, active follow-up window, cooldown, and self-audio suppression
 - `TURN-BASED`: older one-turn voice flow for troubleshooting
-- `TEXT`: typed input for fast router and memory validation
 
 ### 6.1 Core Terms
 
@@ -139,7 +138,7 @@ The current shipped baseline uses these defaults unless overridden by environmen
 
 ### 6.3 Runtime Ownership Boundary
 
-`HybridRouter` owns turn preparation, explicit-save bypass behavior, memory recall, and optional tool execution. `main.py` owns runtime orchestration, final streaming generation, TTS chunk delivery, and mode-specific control flow.
+`HybridRouter` owns turn preparation, explicit-save bypass behavior, memory recall, and optional tool execution. `main.py` owns runtime orchestration through `RuntimeController`, final streaming generation, TTS chunk delivery, and mode-specific control flow.
 
 ## 7. Core Workflow Diagrams
 
@@ -155,7 +154,7 @@ sequenceDiagram
     participant Vault as ChromaDB
     participant TTS as MacOSTTS
 
-    User->>Main: Speak or type "insert info my dog's name is Nori"
+    User->>Main: Speak "insert info my dog's name is Nori"
     Main->>Router: prepare_turn(transcript)
     Router->>Memory: upsert_memory(payload)
     Memory->>Embed: Create embedding
@@ -300,13 +299,12 @@ The product shall run end-to-end on the local machine for chat, embeddings, tran
 
 The product shall target Apple Silicon Macs and avoid dependencies that require CUDA or PyTorch/CUDA.
 
-### FR-3 Voice And Text Input Modes
+### FR-3 Voice Runtime Modes
 
 The product shall support:
 
 - continuous listening as the default voice mode
 - turn-based voice mode for troubleshooting
-- text-input mode for rapid local validation
 
 ### FR-4 Speech Capture And Transcription
 
@@ -544,7 +542,6 @@ As a developer or maintainer, I want safe troubleshooting modes so that I can is
 
 Acceptance criteria:
 
-- Given the `--text-input` flag, when Lulu starts, then it accepts typed prompts instead of microphone input.
 - Given the `--turn-based` flag, when Lulu starts, then it bypasses continuous listening and uses the older one-turn voice loop.
 - Given the memory inspection script, when it is run, then it reads stored memory without modifying the database.
 
@@ -586,7 +583,7 @@ These metrics formalize product outcomes that were implicit in the implementatio
 
 ### 13.1 Current Release Includes
 
-- local voice and text interaction
+- local voice interaction
 - hybrid memory routing
 - canonical semantic memory
 - grouped smoothness-first streamed TTS

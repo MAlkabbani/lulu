@@ -198,20 +198,6 @@ struct RuntimeDiagnosticsResponse: Decodable {
     }
 }
 
-struct AcceptedResponse: Decodable {
-    let apiVersion: String
-    let accepted: Bool
-    let requestId: String
-    let status: String
-
-    private enum CodingKeys: String, CodingKey {
-        case apiVersion = "api_version"
-        case accepted
-        case requestId = "request_id"
-        case status
-    }
-}
-
 enum JSONValue: Codable, Sendable {
     case string(String)
     case number(Double)

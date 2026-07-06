@@ -91,11 +91,10 @@ def test_runtime_controller_bootstrap_sets_ready_state() -> None:
         ui=ui,
     )
 
-    ready = controller.bootstrap(text_input_mode=True)
+    ready = controller.bootstrap()
 
     assert ready is True
     assert ui.state.mode == "ready"
-    assert ui.state.text_input_mode is True
     assert ui.state.ollama_version == "0.3.0"
 
 
@@ -116,31 +115,10 @@ def test_runtime_controller_set_runtime_mode_publishes_event() -> None:
         event_bus=bus,
     )
 
-    controller.set_runtime_mode("text")
+    controller.set_runtime_mode("continuous")
 
-    assert ui.state.runtime_mode == "text"
+    assert ui.state.runtime_mode == "continuous"
     assert "runtime.state_changed" in seen_events
-
-
-def test_runtime_controller_submit_text_turn_updates_ui_and_tts() -> None:
-    settings = Settings(tts_stream_min_chunk_chars=8, tts_stream_soft_chunk_chars=24)
-    ui = TerminalUI(settings)
-    tts = FakeTTS()
-    controller = RuntimeController(
-        settings,
-        ollama_client=FakeOllama(),
-        memory_manager=FakeMemoryManager(),  # type: ignore[arg-type]
-        router=FixedRouter(),  # type: ignore[arg-type]
-        audio_handler=FakeAudioHandler(),  # type: ignore[arg-type]
-        tts=tts,  # type: ignore[arg-type]
-        ui=ui,
-    )
-
-    controller.submit_text_turn("hello")
-
-    assert ui.state.response == "Echo: hello"
-    assert ui.state.mode == "ready"
-    assert tts.enqueued_chunks == ["Echo: hello"]
 
 
 def test_runtime_controller_starts_and_stops_continuous_background_runtime(monkeypatch) -> None:
@@ -211,5 +189,5 @@ def test_runtime_controller_blocks_voice_start_when_transcription_preflight_fail
     state = controller.start_runtime("continuous")
 
     assert state.mode == "startup_error"
-    assert state.runtime_mode == "text"
+    assert state.runtime_mode == "continuous"
     assert "Voice runtime preflight failed" in state.last_error

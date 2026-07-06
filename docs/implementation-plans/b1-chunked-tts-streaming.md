@@ -28,7 +28,7 @@ Useful future comment to preserve in the implementation:
 
 Based on `main.py`:
 
-- the app currently captures audio or text input, then waits for `router.handle_transcript(...)` to return a full `RouteResult`
+- the app currently captures audio input, then waits for `router.handle_transcript(...)` to return a full `RouteResult`
 - TTS only begins after the full response exists
 - timing is already tracked in the terminal UI for `capture`, `stt`, `router`, `tts`, and `total`
 - the observability layer is strong enough to surface streaming state without architectural redesign

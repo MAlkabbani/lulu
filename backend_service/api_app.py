@@ -11,7 +11,6 @@ from starlette.websockets import WebSocketDisconnect
 
 from app_core.runtime_controller import RuntimeController
 from backend_service.api_models import (
-    AcceptedResponse,
     DependencyHealthResponse,
     HealthResponse,
     ModeRequest,
@@ -23,7 +22,6 @@ from backend_service.api_models import (
     SettingsResponse,
     SettingsUpdateRequest,
     SettingsUpdateResponse,
-    TextTurnRequest,
 )
 from backend_service.auth import require_http_auth, require_websocket_auth
 from backend_service.websocket_events import WebSocketEventBridge
@@ -196,12 +194,6 @@ def build_service_app(
     def runtime_diagnostics(request: Request) -> RuntimeDiagnosticsResponse:
         authorize(request)
         return RuntimeDiagnosticsResponse(**controller.get_diagnostics())
-
-    @app.post("/v1/turns/text", response_model=AcceptedResponse)
-    def submit_text_turn(request: Request, payload: TextTurnRequest) -> AcceptedResponse:
-        authorize(request)
-        controller.submit_text_turn_async(payload.text)
-        return AcceptedResponse(accepted=True, request_id=payload.request_id, status="queued")
 
     @app.post("/v1/mode", response_model=RuntimeStateResponse)
     def set_mode(request: Request, payload: ModeRequest) -> RuntimeStateResponse:
