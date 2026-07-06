@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import time
 from pathlib import Path
 
 import pytest
@@ -11,6 +11,11 @@ from starlette.websockets import WebSocketDisconnect
 from app_core.event_bus import EventBus
 from app_core.runtime_models import DependencyHealth, RuntimeSnapshot, make_event
 from backend_service.api_app import build_service_app
+from backend_service.websocket_events import (
+    EVENT_QUEUE_MAX_SIZE,
+    MAX_DROPPED_EVENTS,
+    WebSocketEventBridge,
+)
 from config import Settings
 
 
@@ -216,22 +221,37 @@ def test_websocket_stream_serializes_runtime_events(tmp_path: Path) -> None:
 
 
 def test_websocket_stream_disconnects_slow_consumers(tmp_path: Path) -> None:
-    controller = FakeController(tmp_path)
-    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
-    client = TestClient(app)
+    async def exercise() -> list[str]:
+        controller = FakeController(tmp_path)
+        bridge = WebSocketEventBridge(controller.event_bus)
+        sent_event_types: list[str] = []
+        connected = asyncio.Event()
+        release_send = asyncio.Event()
 
-    with client.websocket_connect("/v1/events/ws", headers=auth_headers()) as websocket:
-        for index in range(200):
-            controller.event_bus.publish(make_event("response.partial", text=f"chunk-{index}"))
-        time.sleep(0.1)
+        async def send_json(payload: dict[str, object]) -> None:
+            sent_event_types.append(str(payload["event_type"]))
+            if payload["event_type"] == "service.connected":
+                connected.set()
+                return
+            await release_send.wait()
 
-        first = websocket.receive_json()
-        observed_types = [first["event_type"]]
-        for _ in range(100):
-            message = websocket.receive_json()
-            observed_types.append(message["event_type"])
-            if message["event_type"] == "service.overload":
-                break
+        task = asyncio.create_task(bridge.stream(send_json=send_json))
+        await asyncio.wait_for(connected.wait(), timeout=1.0)
+
+        publish_count = EVENT_QUEUE_MAX_SIZE + MAX_DROPPED_EVENTS + 1
+        for index in range(publish_count):
+            controller.event_bus.publish(
+                make_event("response.partial", text=f"chunk-{index}")
+            )
+
+        for _ in range(10):
+            await asyncio.sleep(0)
+
+        release_send.set()
+        await asyncio.wait_for(task, timeout=1.0)
+        return sent_event_types
+
+    observed_types = asyncio.run(exercise())
 
     assert "service.connected" in observed_types
     assert "service.overload" in observed_types
