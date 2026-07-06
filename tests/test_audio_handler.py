@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from audio_handler import (
@@ -86,3 +87,19 @@ def test_record_until_silence_reports_missing_audio_dependency(monkeypatch) -> N
             silence_seconds=0.2,
             pre_roll_chunks=1,
         )
+
+
+def test_transcribe_audio_reports_missing_mlx_runtime(monkeypatch) -> None:
+    monkeypatch.setattr("audio_handler.transcribe", None)
+    monkeypatch.setattr(
+        "audio_handler._MLX_WHISPER_IMPORT_ERROR",
+        ImportError("libmlx.so missing"),
+    )
+    handler = AudioHandler(Settings())
+    monkeypatch.setattr(handler, "_resolve_whisper_model_reference", lambda: "mock-model")
+
+    with pytest.raises(
+        AudioTranscriptionError,
+        match="Local Whisper transcription is unavailable",
+    ):
+        handler.transcribe_audio(np.zeros(8, dtype=np.float32))

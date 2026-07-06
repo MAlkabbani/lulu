@@ -13,7 +13,6 @@ from typing import Any
 
 import numpy as np
 from huggingface_hub import snapshot_download
-from mlx_whisper import transcribe
 
 from config import Settings
 from wake_detection import WakeAudioAnalysis, WakeWordEngine, combine_wake_confidence
@@ -25,6 +24,14 @@ except (ImportError, OSError) as exc:
     _SOUNDDEVICE_IMPORT_ERROR: Exception | None = exc
 else:
     _SOUNDDEVICE_IMPORT_ERROR = None
+
+try:
+    from mlx_whisper import transcribe
+except (ImportError, OSError) as exc:
+    transcribe: Any = None
+    _MLX_WHISPER_IMPORT_ERROR: Exception | None = exc
+else:
+    _MLX_WHISPER_IMPORT_ERROR = None
 
 
 class AudioCaptureError(RuntimeError):
@@ -45,6 +52,15 @@ class TTSPlaybackError(RuntimeError):
 
 def audio_input_available() -> bool:
     return sd is not None
+
+
+def _require_transcribe() -> Callable[..., Any]:
+    if transcribe is None:
+        raise AudioTranscriptionError(
+            "Local Whisper transcription is unavailable. Install the MLX "
+            "runtime and whisper dependencies before transcribing audio."
+        ) from _MLX_WHISPER_IMPORT_ERROR
+    return transcribe
 
 
 def _split_remote_model_reference(model_reference: str, revision: str) -> tuple[str, str | None]:
@@ -336,7 +352,7 @@ class AudioHandler:
             model_reference = self._resolve_whisper_model_reference()
             silent_audio = np.zeros(self.settings.sample_rate, dtype=np.float32)
             try:
-                transcribe(
+                _require_transcribe()(
                     silent_audio,
                     path_or_hf_repo=model_reference,
                     language=self.settings.whisper_language,
@@ -421,7 +437,7 @@ class AudioHandler:
         pcm_source = np.nan_to_num(pcm_source, nan=0.0, posinf=1.0, neginf=-1.0)
         pcm_source = np.clip(pcm_source, -1.0, 1.0)
         try:
-            result = transcribe(
+            result = _require_transcribe()(
                 pcm_source,
                 path_or_hf_repo=model_reference,
                 language=self.settings.whisper_language,
