@@ -23,7 +23,12 @@ class FakeController:
             logs_path=tmp_path / "logs",
             exports_path=tmp_path / "exports",
         )
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode="continuous", status_line="Ready", degraded=False)
+        self._state = RuntimeSnapshot(
+            mode="ready",
+            runtime_mode="continuous",
+            status_line="Ready",
+            degraded=False,
+        )
 
     def get_state(self) -> RuntimeSnapshot:
         return self._state
@@ -38,18 +43,30 @@ class FakeController:
         )
 
     def start_runtime(self, mode: str) -> RuntimeSnapshot:
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode=mode, status_line=f"Runtime started in {mode} mode.")
+        self._state = RuntimeSnapshot(
+            mode="ready",
+            runtime_mode=mode,
+            status_line=f"Runtime started in {mode} mode.",
+        )
         return self._state
 
     def stop_runtime(self) -> RuntimeSnapshot:
-        self._state = RuntimeSnapshot(mode="idle", runtime_mode=self._state.runtime_mode, status_line="Runtime stopped.")
+        self._state = RuntimeSnapshot(
+            mode="idle",
+            runtime_mode=self._state.runtime_mode,
+            status_line="Runtime stopped.",
+        )
         return self._state
 
     def restart_runtime(self, mode: str | None = None) -> RuntimeSnapshot:
         return self.start_runtime(mode or self._state.runtime_mode)
 
     def set_runtime_mode(self, mode: str) -> None:
-        self._state = RuntimeSnapshot(mode=self._state.mode, runtime_mode=mode, status_line=self._state.status_line)
+        self._state = RuntimeSnapshot(
+            mode=self._state.mode,
+            runtime_mode=mode,
+            status_line=self._state.status_line,
+        )
 
     def get_diagnostics(self) -> dict[str, object]:
         return {
@@ -97,7 +114,11 @@ def auth_headers() -> dict[str, str]:
 
 
 def test_healthz_requires_auth(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.get("/healthz")
@@ -106,7 +127,11 @@ def test_healthz_requires_auth(tmp_path: Path) -> None:
 
 
 def test_healthz_returns_ready_status_with_auth(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.get("/healthz", headers=auth_headers())
@@ -117,7 +142,11 @@ def test_healthz_returns_ready_status_with_auth(tmp_path: Path) -> None:
 
 
 def test_dependencies_endpoint_returns_health_payload(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.get("/v1/dependencies", headers=auth_headers())
@@ -140,7 +169,11 @@ def test_mode_endpoint_updates_runtime_mode(tmp_path: Path) -> None:
 
 
 def test_runtime_start_rejects_removed_text_mode(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.post("/v1/runtime/start", headers=auth_headers(), json={"mode": "text"})
@@ -149,7 +182,11 @@ def test_runtime_start_rejects_removed_text_mode(tmp_path: Path) -> None:
 
 
 def test_runtime_diagnostics_endpoint_returns_snapshot_payload(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.get("/v1/runtime/diagnostics", headers=auth_headers())
@@ -263,5 +300,7 @@ def test_update_settings_preserves_existing_keys_and_creates_backup(tmp_path: Pa
     persisted = json.loads(controller.settings.config_path.read_text(encoding="utf-8"))
     assert persisted["chat_model"] == "new-model"
     assert persisted["wake_phrase"] == "hey lulu"
-    backup_path = controller.settings.config_path.parent / f"{controller.settings.config_path.name}.bak"
+    backup_path = (
+        controller.settings.config_path.parent / f"{controller.settings.config_path.name}.bak"
+    )
     assert backup_path.exists()

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from collections import deque
-from dataclasses import dataclass
-from difflib import SequenceMatcher
-from pathlib import Path
 import queue
 import re
 import subprocess
 import threading
+from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -385,7 +385,8 @@ class AudioHandler:
                         break
         except Exception as exc:
             raise AudioCaptureError(
-                "Microphone capture failed. Check microphone permission and audio device availability."
+                "Microphone capture failed. Check microphone permission "
+                "and audio device availability."
             ) from exc
 
         if not speech_frames:
@@ -456,12 +457,9 @@ class AudioHandler:
             analysis=analysis,
             settings=self.settings,
         )
-        matched = (
-            transcript_match.matched
-            or (
-                transcript_match.score >= self.settings.wake_transcript_score_floor
-                and confidence >= threshold
-            )
+        matched = transcript_match.matched or (
+            transcript_match.score >= self.settings.wake_transcript_score_floor
+            and confidence >= threshold
         )
         reason = "probabilistic-match" if matched else transcript_match.reason or "below-threshold"
         return WakeMatch(
@@ -510,12 +508,12 @@ class AudioHandler:
                     local_files_only=True,
                     revision=revision,
                 )
-            except Exception:
+            except Exception as exc:
                 if revision is None:
                     raise AudioTranscriptionError(
                         "Remote Whisper model downloads require a pinned revision. "
                         "Set MLX_WHISPER_MODEL to repo@revision or set MLX_WHISPER_REVISION."
-                    )
+                    ) from exc
                 try:
                     resolved_path = snapshot_download(repo_id=repo_id, revision=revision)
                 except Exception as exc:
@@ -551,7 +549,6 @@ def score_wake_phrase_match(
     best_score = 0.0
     best_end_index = 0
     best_prefix_text = ""
-    best_start_index = 0
 
     max_start_index = min(2, max(0, len(transcript_tokens) - len(wake_tokens)))
     max_window_length = len(wake_tokens) + 2
@@ -566,7 +563,6 @@ def score_wake_phrase_match(
             score = _wake_similarity_score(prefix_text, wake_phrase) - (start_index * 0.04)
             if score > best_score:
                 best_score = score
-                best_start_index = start_index
                 best_end_index = end_index
                 best_prefix_text = prefix_text
 

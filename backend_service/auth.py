@@ -25,10 +25,14 @@ def require_http_auth(
     enforce_loopback: bool,
 ) -> None:
     if enforce_loopback and not is_loopback_host(getattr(request.client, "host", None)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Loopback access required.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Loopback access required."
+        )
     provided_token = extract_bearer_token(request.headers.get("authorization"))
     if provided_token != expected_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid launch token.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid launch token."
+        )
 
 
 async def require_websocket_auth(

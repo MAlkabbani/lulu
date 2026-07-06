@@ -316,13 +316,14 @@ Operational notes:
 
 GitHub Actions now enforce the baseline quality and security checks on pull requests:
 
-- `ruff check .`
+- `ruff check` on changed Python files in the PR or push range
 - targeted `pytest`
-- `bandit`
+- `bandit -ll`
 - `semgrep --config auto`
 - `pip-audit -r requirements.txt`
 
 `pip-audit` currently reports a `chromadb` advisory whose published exploit path targets the Chroma server API with remote model repositories. Lulu uses the in-process `PersistentClient` path, so the advisory remains tracked and gated in CI but is not currently exposed through a reachable server endpoint in this repo.
+Bandit is configured to block medium and high severity findings while the repo keeps its already-triaged low-severity subprocess warnings on a separate cleanup track.
 
 ### Pronunciation overrides
 

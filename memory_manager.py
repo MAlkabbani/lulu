@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
 import json
 import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -232,7 +232,7 @@ class MemoryManager:
 
         hits: list[MemoryHit] = []
         for memory_id, document, distance, metadata in zip(
-            ids, documents, distances, metadatas
+            ids, documents, distances, metadatas, strict=False
         ):
             tags = self._parse_tags(metadata)
             hits.append(
@@ -368,7 +368,7 @@ class MemoryManager:
 
         best_match: MemoryHit | None = None
         for memory_id, document, distance, metadata in zip(
-            ids, documents, distances, metadatas
+            ids, documents, distances, metadatas, strict=False
         ):
             metadata = metadata or {}
             existing_normalized = str(metadata.get("normalized_text", ""))
@@ -523,7 +523,7 @@ class MemoryManager:
             metadatas = metadatas[0]
 
         hits: list[MemoryHit] = []
-        for memory_id, document, metadata in zip(ids, documents, metadatas):
+        for memory_id, document, metadata in zip(ids, documents, metadatas, strict=False):
             metadata = metadata or {}
             hits.append(
                 MemoryHit(

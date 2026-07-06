@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
 
 from app_core.runtime_models import DependencyHealth
 from config import Settings
@@ -29,7 +28,9 @@ def probe_dependency_health(
         issues.append(f"Unable to reach Ollama at {settings.ollama_base_url}.")
 
     known_models = _known_model_aliases(available_models or [])
-    chat_model_available = not known_models or _model_is_available(settings.chat_model, known_models)
+    chat_model_available = not known_models or _model_is_available(
+        settings.chat_model, known_models
+    )
     embedding_model_available = not known_models or _model_is_available(
         settings.embedding_model,
         known_models,

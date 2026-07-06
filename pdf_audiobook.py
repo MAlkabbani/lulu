@@ -176,10 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--portable-format",
         choices=PORTABLE_AUDIO_FORMATS,
         default="none",
-        help=(
-            "Optional local post-processing format for AIFF outputs. "
-            "Default: none."
-        ),
+        help=("Optional local post-processing format for AIFF outputs. Default: none."),
     )
     parser.add_argument(
         "--preview-chars",
@@ -211,10 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--play-mode",
         choices=("auto", "audio", "text"),
         default="auto",
-        help=(
-            "Playback preference for --play-export or --play-after-export. "
-            "Default: auto."
-        ),
+        help=("Playback preference for --play-export or --play-after-export. Default: auto."),
     )
     return parser
 
@@ -295,9 +289,7 @@ def main(argv: list[str] | None = None) -> int:
 def validate_cli_args(args: argparse.Namespace) -> None:
     if args.play_export:
         if args.input_pdf:
-            raise InputValidationError(
-                "Do not provide INPUT.pdf when using --play-export."
-            )
+            raise InputValidationError("Do not provide INPUT.pdf when using --play-export.")
         if args.play_after_export:
             raise InputValidationError(
                 "--play-after-export cannot be used together with --play-export."
@@ -305,7 +297,8 @@ def validate_cli_args(args: argparse.Namespace) -> None:
         return
     if not args.input_pdf:
         raise InputValidationError(
-            "Provide INPUT.pdf to generate an export, or use --play-export to play an existing export."
+            "Provide INPUT.pdf to generate an export, or use --play-export "
+            "to play an existing export."
         )
 
 
@@ -614,10 +607,7 @@ def normalize_extracted_text(text: str) -> str:
 def clean_pdf_text(page_texts: list[str]) -> str:
     pages = [split_page_lines(text) for text in page_texts]
     repeated_lines = detect_repeated_margin_lines(pages)
-    cleaned_pages = [
-        rebuild_page_text(lines, repeated_lines=repeated_lines)
-        for lines in pages
-    ]
+    cleaned_pages = [rebuild_page_text(lines, repeated_lines=repeated_lines) for lines in pages]
     paragraphs = [page for page in cleaned_pages if page]
     joined = "\n\n".join(paragraphs)
     joined = re.sub(r"[ \t]+\n", "\n", joined)
@@ -644,11 +634,7 @@ def detect_repeated_margin_lines(pages: list[list[str]]) -> set[str]:
         for candidate in set(candidates):
             counts[candidate] = counts.get(candidate, 0) + 1
     minimum_repeats = 2 if len(pages) < 4 else 3
-    return {
-        candidate
-        for candidate, count in counts.items()
-        if count >= minimum_repeats
-    }
+    return {candidate for candidate, count in counts.items() if count >= minimum_repeats}
 
 
 def normalize_margin_candidate(line: str) -> str:
@@ -753,10 +739,7 @@ def split_into_sections(text: str, *, chapter_splitting: str) -> list[PreparedSe
                 )
                 current_paragraphs = []
             current_title = paragraph
-            if (
-                index + 1 < len(paragraphs)
-                and is_probable_subtitle(paragraphs[index + 1])
-            ):
+            if index + 1 < len(paragraphs) and is_probable_subtitle(paragraphs[index + 1]):
                 current_title = f"{paragraph}: {paragraphs[index + 1]}"
                 index += 1
         else:
@@ -805,14 +788,9 @@ def is_probable_subtitle(paragraph: str) -> bool:
     if not alphabetic_words:
         return False
 
-    normalized_words = [
-        re.sub(r"^[^A-Za-z0-9]+|[^A-Za-z0-9]+$", "", word)
-        for word in words
-    ]
+    normalized_words = [re.sub(r"^[^A-Za-z0-9]+|[^A-Za-z0-9]+$", "", word) for word in words]
     significant_words = [
-        word
-        for word in normalized_words
-        if word and word.casefold() not in TITLE_CONNECTOR_WORDS
+        word for word in normalized_words if word and word.casefold() not in TITLE_CONNECTOR_WORDS
     ]
     if not significant_words:
         return False
@@ -1010,8 +988,7 @@ def render_section_audio(
             )
         except OSError as exc:
             raise AudiobookRenderError(
-                "Failed to invoke macOS say. "
-                "This feature requires the native say command on macOS."
+                "Failed to invoke macOS say. This feature requires the native say command on macOS."
             ) from exc
         except subprocess.TimeoutExpired as exc:
             raise AudiobookRenderError(
@@ -1075,7 +1052,8 @@ def convert_audio_outputs(
             ) from exc
         except subprocess.TimeoutExpired as exc:
             raise AudiobookRenderError(
-                f"Portable audio conversion timed out for {audio_path.name} after {exc.timeout} seconds.",
+                "Portable audio conversion timed out for "
+                f"{audio_path.name} after {exc.timeout} seconds.",
                 audio_paths=audio_paths,
                 portable_audio_paths=portable_paths,
             ) from exc
@@ -1145,9 +1123,7 @@ def update_manifest_audio_outputs(
             "status": portable_conversion_status,
             "format": portable_format,
             "error": portable_conversion_error,
-            "files": [
-                str(path.relative_to(output_dir)) for path in portable_audio_paths
-            ],
+            "files": [str(path.relative_to(output_dir)) for path in portable_audio_paths],
         },
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -1160,9 +1136,7 @@ def validate_export_directory(path: Path) -> Path:
     if not resolved.is_dir():
         raise InputValidationError(f"Export path is not a directory: {resolved}")
     if not (resolved / "text").exists():
-        raise InputValidationError(
-            f"Export directory does not contain a text/ folder: {resolved}"
-        )
+        raise InputValidationError(f"Export directory does not contain a text/ folder: {resolved}")
     return resolved
 
 
@@ -1187,9 +1161,7 @@ def play_export_directory(
                 timeout=_command_timeout_seconds("PDF_AUDIO_PLAYBACK_TIMEOUT_SECONDS", 120),
             )
         except OSError as exc:
-            raise PlaybackError(
-                f"Failed to invoke macOS {command_name} for {path.name}."
-            ) from exc
+            raise PlaybackError(f"Failed to invoke macOS {command_name} for {path.name}.") from exc
         except subprocess.TimeoutExpired as exc:
             raise PlaybackError(
                 f"Playback timed out for {path.name} after {exc.timeout} seconds."
@@ -1230,9 +1202,7 @@ def collect_export_assets(export_dir: Path) -> dict[str, list[Path]]:
 
     text_dir = export_dir / "text"
     section_text_paths = sorted(
-        path
-        for path in text_dir.glob("*.txt")
-        if path.name != "full_text.txt"
+        path for path in text_dir.glob("*.txt") if path.name != "full_text.txt"
     )
     full_text_path = text_dir / "full_text.txt"
     text_paths = section_text_paths
@@ -1291,9 +1261,7 @@ def select_playback_paths(
         return portable_paths or audio_paths, "audio"
     if text_paths:
         return text_paths, "text"
-    raise PlaybackError(
-        "The export does not contain playable audio files or readable text files."
-    )
+    raise PlaybackError("The export does not contain playable audio files or readable text files.")
 
 
 def _print_progress(message: str) -> None:

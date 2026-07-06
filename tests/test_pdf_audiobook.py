@@ -13,10 +13,10 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from pdf_audiobook import (
     PDFProcessingError,
+    PlaybackError,
     apply_pronunciation_overrides,
     build_audiobook_from_args,
     build_ffmpeg_command,
-    PlaybackError,
     clean_pdf_text,
     convert_audio_outputs,
     main,
@@ -185,11 +185,7 @@ def test_split_into_sections_detects_title_case_subtitles() -> None:
 
 
 def test_split_into_sections_does_not_promote_sentence_like_text_to_subtitle() -> None:
-    text = (
-        "Chapter 5\n\n"
-        "The first chapter begins here\n\n"
-        "More body text follows."
-    )
+    text = "Chapter 5\n\nThe first chapter begins here\n\nMore body text follows."
 
     sections = split_into_sections(text, chapter_splitting="auto")
 

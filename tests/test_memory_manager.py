@@ -23,7 +23,7 @@ class FakeCollection:
 
     def upsert(self, ids, documents, embeddings, metadatas) -> None:  # noqa: ANN001
         for memory_id, document, embedding, metadata in zip(
-            ids, documents, embeddings, metadatas
+            ids, documents, embeddings, metadatas, strict=False
         ):
             self.records[memory_id] = StoredRecord(
                 id=memory_id,
@@ -42,9 +42,7 @@ class FakeCollection:
         return {
             "ids": [[record.id for record in ranked]],
             "documents": [[record.document for record in ranked]],
-            "distances": [
-                [abs(query_embedding[0] - record.embedding[0]) for record in ranked]
-            ],
+            "distances": [[abs(query_embedding[0] - record.embedding[0]) for record in ranked]],
             "metadatas": [[record.metadata for record in ranked]],
         }
 
@@ -130,7 +128,10 @@ def test_near_duplicate_updates_existing_canonical_record() -> None:
     assert second.revision_count == 2
     assert collection.count() == 1
     assert collection.records[first.memory_id].document == "My favorite tea is jasmine."
-    assert collection.records[first.memory_id].metadata["previous_text"] == "My favorite tea is jasmine"
+    assert (
+        collection.records[first.memory_id].metadata["previous_text"]
+        == "My favorite tea is jasmine"
+    )
 
 
 def test_conflicting_memory_preserves_revision_history_when_semantically_close() -> None:
@@ -206,7 +207,10 @@ def test_list_recent_memories_orders_by_updated_at_desc() -> None:
     )
     manager = MemoryManager(build_settings(), model_client, collection=collection)
     manager.upsert_memory("My favorite tea is jasmine", source="explicit")
-    second = manager.upsert_memory("My dentist appointment is on Friday at 2 PM.", source="tool_call")
+    second = manager.upsert_memory(
+        "My dentist appointment is on Friday at 2 PM.",
+        source="tool_call",
+    )
 
     hits = manager.list_recent_memories(limit=2)
 

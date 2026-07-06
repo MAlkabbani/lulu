@@ -24,7 +24,12 @@ class FakeController:
             logs_path=tmp_path / "logs",
             exports_path=tmp_path / "exports",
         )
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode="continuous", status_line="Ready", degraded=False)
+        self._state = RuntimeSnapshot(
+            mode="ready",
+            runtime_mode="continuous",
+            status_line="Ready",
+            degraded=False,
+        )
 
     def get_state(self) -> RuntimeSnapshot:
         return self._state
@@ -39,7 +44,11 @@ class FakeController:
         )
 
     def start_runtime(self, mode: str) -> RuntimeSnapshot:
-        self._state = RuntimeSnapshot(mode="ready", runtime_mode=mode, status_line=f"Runtime started in {mode} mode.")
+        self._state = RuntimeSnapshot(
+            mode="ready",
+            runtime_mode=mode,
+            status_line=f"Runtime started in {mode} mode.",
+        )
         return self._state
 
     def stop_runtime(self) -> RuntimeSnapshot:
@@ -49,7 +58,12 @@ class FakeController:
         return self.start_runtime(mode or self._state.runtime_mode)
 
     def set_runtime_mode(self, mode: str) -> None:
-        self._state = RuntimeSnapshot(mode=self._state.mode, runtime_mode=mode, status_line=self._state.status_line)
+        self._state = RuntimeSnapshot(
+            mode=self._state.mode,
+            runtime_mode=mode,
+            status_line=self._state.status_line,
+        )
+
 
 def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-token"}
@@ -91,7 +105,11 @@ def write_text_pdf(path: Path, text: str) -> None:
 
 
 def test_pdf_job_create_validates_required_fields(tmp_path: Path) -> None:
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     response = client.post("/v1/pdf-audiobook/jobs", headers=auth_headers(), json={"pdf_path": ""})
@@ -103,7 +121,11 @@ def test_pdf_job_dry_run_completes_for_text_pdf(tmp_path: Path) -> None:
     pdf_path = tmp_path / "book.pdf"
     output_dir = tmp_path / "exports"
     write_text_pdf(pdf_path, "Chapter 1 Hello from Lulu PDF service.")
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
 
     create = client.post(
@@ -133,7 +155,11 @@ def test_pdf_job_reports_failure_for_image_only_pdf(tmp_path: Path) -> None:
     with pdf_path.open("wb") as handle:
         writer.write(handle)
 
-    app = build_service_app(FakeController(tmp_path), launch_token="test-token", enforce_loopback=False)
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
     client = TestClient(app)
     create = client.post(
         "/v1/pdf-audiobook/jobs",

@@ -8,7 +8,6 @@ from app_core.event_bus import EventBus
 from app_core.runtime_models import RuntimeEvent, make_event
 from backend_service.api_models import API_VERSION
 
-
 EVENT_QUEUE_MAX_SIZE = 64
 MAX_DROPPED_EVENTS = 8
 DROPPABLE_EVENT_TYPES = {"response.partial", "tts.chunk_emitted"}
@@ -45,7 +44,10 @@ class WebSocketEventBridge:
                     return
                 except asyncio.QueueFull:
                     dropped_events += 1
-                    if event.event_type in DROPPABLE_EVENT_TYPES and dropped_events < MAX_DROPPED_EVENTS:
+                    if (
+                        event.event_type in DROPPABLE_EVENT_TYPES
+                        and dropped_events < MAX_DROPPED_EVENTS
+                    ):
                         return
                     try:
                         queue.get_nowait()

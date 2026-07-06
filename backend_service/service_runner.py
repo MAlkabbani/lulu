@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import socket
-import sys
 
 import uvicorn
 
@@ -30,7 +29,9 @@ def _build_startup_socket(host: str, port: int) -> socket.socket:
     return server_socket
 
 
-def _emit_startup_payload(*, host: str, port: int, startup_nonce: str, contract_version: str) -> None:
+def _emit_startup_payload(
+    *, host: str, port: int, startup_nonce: str, contract_version: str
+) -> None:
     payload = {
         "contract_version": contract_version,
         "host": host,

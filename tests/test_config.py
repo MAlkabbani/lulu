@@ -38,7 +38,9 @@ def test_settings_rejects_blank_wake_phrase(monkeypatch) -> None:
         Settings()
 
 
-def test_settings_reads_config_values_from_explicit_config_path(tmp_path: Path, monkeypatch) -> None:
+def test_settings_reads_config_values_from_explicit_config_path(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.delenv("CHROMA_PATH", raising=False)
     config_path = tmp_path / "settings.json"
     config_path.write_text(

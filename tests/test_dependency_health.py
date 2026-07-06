@@ -56,8 +56,13 @@ def test_probe_dependency_health_reports_missing_dependencies(tmp_path: Path) ->
     assert any("macOS say is unavailable." == issue for issue in health.issues)
 
 
-def test_probe_dependency_health_accepts_latest_tag_alias_for_embedding_model(tmp_path: Path) -> None:
-    settings = Settings(chroma_path=tmp_path / "vault_db", embedding_model="nomic-embed-text")
+def test_probe_dependency_health_accepts_latest_tag_alias_for_embedding_model(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        chroma_path=tmp_path / "vault_db",
+        embedding_model="nomic-embed-text",
+    )
     settings.chroma_path.parent.mkdir(parents=True, exist_ok=True)
 
     health = probe_dependency_health(

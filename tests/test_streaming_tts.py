@@ -86,12 +86,14 @@ def test_phrase_chunker_waits_for_sentence_boundary_before_force_split() -> None
     chunker = PhraseChunker(Settings())
 
     ready = chunker.push(
-        "This response keeps going without punctuation so the current chunker waits for a full sentence instead of chopping the audio early"
+        "This response keeps going without punctuation so the current "
+        "chunker waits for a full sentence instead of chopping the audio early"
     )
 
     assert ready == []
     assert chunker.finish() == [
-        "This response keeps going without punctuation so the current chunker waits for a full sentence instead of chopping the audio early"
+        "This response keeps going without punctuation so the current "
+        "chunker waits for a full sentence instead of chopping the audio early"
     ]
 
 
@@ -125,7 +127,8 @@ def test_phrase_chunker_prefers_clause_break_before_hard_split() -> None:
     )
 
     ready = chunker.push(
-        "This answer has a useful pause, so the chunker can break here before it hard splits the rest"
+        "This answer has a useful pause, so the chunker can break here "
+        "before it hard splits the rest"
     )
 
     assert ready[0] == "This answer has a useful pause,"

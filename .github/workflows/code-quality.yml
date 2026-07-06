@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,8 +26,27 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Collect changed Python files
+        id: changed-python
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            files=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- '*.py')
+          else
+            files=$(git diff --name-only --diff-filter=ACMR "${{ github.event.before }}...${{ github.sha }}" -- '*.py')
+          fi
+
+          if [ -z "$files" ]; then
+            echo "has_files=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '%s\n' "$files" > changed-python-files.txt
+          echo "has_files=true" >> "$GITHUB_OUTPUT"
+
       - name: Run Ruff
-        run: ruff check .
+        if: steps.changed-python.outputs.has_files == 'true'
+        run: xargs -0 ruff check < <(tr '\n' '\0' < changed-python-files.txt)
 
       - name: Run focused pytest suites
         env:

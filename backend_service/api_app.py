@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import os
-import threading
 import tempfile
+import threading
+import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import time
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, status
 from starlette.websockets import WebSocketDisconnect
@@ -31,7 +31,6 @@ from backend_service.auth import require_http_auth, require_websocket_auth
 from backend_service.websocket_events import WebSocketEventBridge
 from pdf_audiobook import ServiceJobResult, run_service_job
 
-
 PdfJobRunner = Callable[[str, PDFJobRequest, Callable[[str], None]], ServiceJobResult]
 
 
@@ -48,7 +47,9 @@ class PdfJobStore:
         self._runner = runner
         self._jobs: dict[str, PDFJobResponse] = {}
         self._lock = threading.Lock()
-        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="lulu-pdf-job")
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="lulu-pdf-job"
+        )
         self._max_pending_jobs = max_pending_jobs
         self._retention_seconds = retention_seconds
         self._retention_limit = retention_limit
@@ -58,7 +59,9 @@ class PdfJobStore:
         job_id = str(uuid.uuid4())
         with self._lock:
             self._prune_jobs_locked()
-            active_jobs = sum(1 for job in self._jobs.values() if job.status in {"pending", "running"})
+            active_jobs = sum(
+                1 for job in self._jobs.values() if job.status in {"pending", "running"}
+            )
             if active_jobs >= self._max_pending_jobs:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -112,9 +115,7 @@ class PdfJobStore:
             return
         now = time.time()
         finished_job_ids = [
-            job_id
-            for job_id, job in self._jobs.items()
-            if job.status in {"completed", "failed"}
+            job_id for job_id, job in self._jobs.items() if job.status in {"completed", "failed"}
         ]
         for job_id in finished_job_ids:
             updated_at = self._job_updated_at.get(job_id, now)
@@ -123,9 +124,7 @@ class PdfJobStore:
                 self._job_updated_at.pop(job_id, None)
 
         finished_job_ids = [
-            job_id
-            for job_id, job in self._jobs.items()
-            if job.status in {"completed", "failed"}
+            job_id for job_id, job in self._jobs.items() if job.status in {"completed", "failed"}
         ]
         if len(self._jobs) <= self._retention_limit:
             return
@@ -173,7 +172,10 @@ def _load_existing_settings_strict(config_path: Path) -> dict[str, object]:
     except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Settings file is malformed and must be repaired before updates: {config_path}.",
+            detail=(
+                "Settings file is malformed and must be repaired before "
+                f"updates: {config_path}."
+            ),
         ) from exc
     if not isinstance(loaded, dict):
         raise HTTPException(
@@ -277,7 +279,9 @@ def build_service_app(
         updates = payload.model_dump(exclude_none=True)
         existing.update(updates)
         _persist_settings_atomically(config_path, existing)
-        return SettingsUpdateResponse(saved=True, restart_required=True, config_path=str(config_path))
+        return SettingsUpdateResponse(
+            saved=True, restart_required=True, config_path=str(config_path)
+        )
 
     @app.post("/v1/runtime/start", response_model=RuntimeStateResponse)
     def start_runtime(request: Request, payload: RuntimeControlRequest) -> RuntimeStateResponse:
@@ -324,7 +328,9 @@ def build_service_app(
         try:
             return job_store.get_job(job_id)
         except KeyError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF job not found.") from exc
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="PDF job not found."
+            ) from exc
 
     @app.websocket("/v1/events/ws")
     async def runtime_events(websocket: WebSocket) -> None:
