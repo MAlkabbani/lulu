@@ -10,9 +10,12 @@ struct PDFAudiobooksView: View {
             VStack(alignment: .leading, spacing: 16) {
                 GroupBox("Workflow") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Run the offline PDF audiobook utility separately from the live assistant runtime.")
-                            .font(.callout)
-                        Text("Use dry run to validate extraction and PDF support before generating audio.")
+                        InlineNotice(
+                            "Run the PDF audiobook workflow separately from the live assistant runtime.",
+                            tone: .info,
+                            systemImage: "book.closed.fill"
+                        )
+                        Text("Use Dry Run first to validate extraction and PDF support before generating audio.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
 
@@ -29,19 +32,25 @@ struct PDFAudiobooksView: View {
 
                 GroupBox("Source PDF") {
                     VStack(alignment: .leading, spacing: 12) {
-                        TextField("PDF Path", text: $model.pdfDraft.pdfPath)
-                            .textFieldStyle(.roundedBorder)
+                        LabeledTextFieldRow(
+                            label: "PDF File",
+                            prompt: "/path/to/book.pdf",
+                            text: $model.pdfDraft.pdfPath,
+                            helpText: "Choose a local text-based PDF."
+                        )
                         HStack(spacing: 10) {
                             Button("Choose PDF") {
                                 if let selection = chooseFile(allowedContentTypes: [.pdf]) {
                                     model.pdfDraft.pdfPath = selection
                                 }
                             }
+                            .help("Open a PDF file chooser.")
                             if !model.pdfDraft.pdfPath.isEmpty {
                                 Button("Clear") {
                                     model.pdfDraft.pdfPath = ""
                                 }
                                 .buttonStyle(.bordered)
+                                .help("Clear the selected PDF path.")
                             }
                         }
                     }
@@ -49,28 +58,48 @@ struct PDFAudiobooksView: View {
 
                 GroupBox("Metadata") {
                     VStack(alignment: .leading, spacing: 12) {
-                        TextField("Title Override", text: $model.pdfDraft.title)
-                        TextField("Author Override", text: $model.pdfDraft.author)
-                        TextField("Genre", text: $model.pdfDraft.genre)
+                        LabeledTextFieldRow(
+                            label: "Title Override",
+                            prompt: "Leave blank to keep the PDF title",
+                            text: $model.pdfDraft.title,
+                            helpText: "Optional. Overrides the detected book title."
+                        )
+                        LabeledTextFieldRow(
+                            label: "Author Override",
+                            prompt: "Leave blank to keep the PDF author",
+                            text: $model.pdfDraft.author,
+                            helpText: "Optional. Overrides the detected author."
+                        )
+                        LabeledTextFieldRow(
+                            label: "Genre",
+                            prompt: "Optional genre",
+                            text: $model.pdfDraft.genre,
+                            helpText: "Optional metadata for the output manifest."
+                        )
                     }
-                    .textFieldStyle(.roundedBorder)
                 }
 
                 GroupBox("Output And Options") {
                     VStack(alignment: .leading, spacing: 12) {
-                        TextField("Export Root Directory", text: $model.pdfDraft.outputDir)
-                            .textFieldStyle(.roundedBorder)
+                        LabeledTextFieldRow(
+                            label: "Export Folder",
+                            prompt: "/path/to/exports",
+                            text: $model.pdfDraft.outputDir,
+                            helpText: "Choose where Lulu writes the manifest, cleaned text, and audio output."
+                        )
                         HStack(spacing: 10) {
                             Button("Choose Export Folder") {
                                 if let selection = chooseDirectory() {
                                     model.pdfDraft.outputDir = selection
                                 }
                             }
+                            .help("Choose the folder where Lulu should write output files.")
                             if !model.pdfDraft.outputDir.isEmpty {
                                 Button("Use Settings Default") {
                                     model.pdfDraft.outputDir = model.settings?.exportsPath ?? model.pdfDraft.outputDir
                                 }
                                 .buttonStyle(.bordered)
+                                .help("Use the default export folder from Settings.")
                             }
                         }
 
@@ -85,33 +114,40 @@ struct PDFAudiobooksView: View {
                             Text("M4A").tag("m4a")
                             Text("MP3").tag("mp3")
                         }
+                        .help("Choose None to keep AIFF-only output. WAV, M4A, and MP3 require ffmpeg.")
                         if model.dependencyHealth?.ffmpegAvailable == false {
-                            Label(
+                            InlineNotice(
                                 "Portable WAV, M4A, and MP3 export requires ffmpeg in PATH. AIFF export still works.",
-                                systemImage: "exclamationmark.triangle"
+                                tone: .warning
                             )
-                            .foregroundStyle(.orange)
                         }
 
                         Toggle("Dry Run Only", isOn: $model.pdfDraft.dryRun)
+                            .help("Validate extraction and sectioning without rendering audio.")
 
                         Stepper(value: $model.pdfDraft.previewChars, in: 100...4000, step: 100) {
                             Text("Preview Characters: \(model.pdfDraft.previewChars)")
                         }
 
-                        TextField("Pronunciation File (Optional JSON)", text: $model.pdfDraft.pronunciationFile)
-                            .textFieldStyle(.roundedBorder)
+                        LabeledTextFieldRow(
+                            label: "Pronunciation File",
+                            prompt: "/path/to/pronunciations.json",
+                            text: $model.pdfDraft.pronunciationFile,
+                            helpText: "Optional JSON file for pronunciation overrides."
+                        )
                         HStack(spacing: 10) {
                             Button("Choose Pronunciation File") {
                                 if let selection = chooseFile(allowedContentTypes: [.json]) {
                                     model.pdfDraft.pronunciationFile = selection
                                 }
                             }
+                            .help("Choose a pronunciation override file.")
                             if !model.pdfDraft.pronunciationFile.isEmpty {
                                 Button("Clear") {
                                     model.pdfDraft.pronunciationFile = ""
                                 }
                                 .buttonStyle(.bordered)
+                                .help("Clear the pronunciation file path.")
                             }
                         }
                     }
@@ -119,6 +155,10 @@ struct PDFAudiobooksView: View {
 
                 GroupBox("Actions") {
                     VStack(alignment: .leading, spacing: 12) {
+                        if let submissionReason = model.pdfSubmissionBlockedReason {
+                            InlineNotice(submissionReason, tone: .warning)
+                        }
+
                         ViewThatFits(in: .horizontal) {
                             HStack(spacing: 10) {
                                 actionButtons
@@ -128,24 +168,34 @@ struct PDFAudiobooksView: View {
                             }
                         }
 
-                        Text(model.pdfStatusMessage.isEmpty ? "No PDF job has been started yet." : model.pdfStatusMessage)
-                            .foregroundStyle(.secondary)
+                        InlineNotice(
+                            model.pdfStatusMessage.isEmpty ? UserFacingText.noActivityYet : model.pdfStatusMessage,
+                            tone: .neutral
+                        )
                     }
                 }
 
                 GroupBox("Current Job") {
                     VStack(alignment: .leading, spacing: 8) {
                         if let job = model.pdfJob {
-                            PDFValueRow(label: "Job ID", value: job.jobID)
-                            PDFValueRow(label: "Status", value: job.status.capitalized)
-                            PDFValueRow(label: "Mode", value: job.dryRun ? "Dry Run" : "Export")
-                            PDFValueRow(label: "Section Count", value: "\(job.sectionCount)")
-                            PDFValueRow(label: "Output Directory", value: job.outputDir ?? "Not available yet")
-                            PDFValueRow(label: "Manifest", value: job.manifestPath ?? "Not available yet")
-                            PDFValueRow(label: "Error", value: job.error ?? "None")
+                            LabeledValueRow(label: "Job ID", value: job.jobID)
+                            LabeledValueRow(label: "Status", value: UserFacingText.pdfJobStatusLabel(job.status))
+                            LabeledValueRow(label: "Mode", value: UserFacingText.pdfWorkflowModeLabel(dryRun: job.dryRun))
+                            LabeledValueRow(label: "Section Count", value: "\(job.sectionCount)")
+                            LabeledValueRow(
+                                label: "Output Folder",
+                                value: UserFacingText.textOrFallback(job.outputDir)
+                            )
+                            LabeledValueRow(
+                                label: "Manifest",
+                                value: UserFacingText.textOrFallback(job.manifestPath)
+                            )
+                            LabeledValueRow(
+                                label: "Error",
+                                value: UserFacingText.textOrFallback(job.error)
+                            )
                         } else {
-                            Text("No active or completed PDF job yet.")
-                                .foregroundStyle(.secondary)
+                            EmptyStateView(text: UserFacingText.noActivityYet)
                         }
                     }
                 }
@@ -159,8 +209,7 @@ struct PDFAudiobooksView: View {
                                     .font(.system(.body, design: .monospaced))
                             }
                         } else {
-                            Text("Progress updates will appear here once a PDF job starts.")
-                                .foregroundStyle(.secondary)
+                            EmptyStateView(text: "Progress updates appear here once a PDF job starts.")
                         }
                     }
                 }
@@ -172,12 +221,15 @@ struct PDFAudiobooksView: View {
 
     @ViewBuilder
     private var statusBadges: some View {
-        badge(text: model.backendHealthy ? "Backend Ready" : "Backend Unavailable", color: model.backendHealthy ? .green : .orange)
-        badge(text: model.pdfWorkflowBusy ? "Job Running" : "Idle", color: model.pdfWorkflowBusy ? .blue : .secondary)
-        badge(text: model.pdfDraft.dryRun ? "Dry Run" : "Export", color: model.pdfDraft.dryRun ? .purple : .cyan)
-        badge(
-            text: model.dependencyHealth?.ffmpegAvailable == false ? "ffmpeg Missing" : "ffmpeg Ready",
-            color: model.dependencyHealth?.ffmpegAvailable == false ? .orange : .green
+        StatusBadge(
+            text: model.backendHealthy ? UserFacingText.backendReady : UserFacingText.backendUnavailable,
+            tone: model.backendHealthy ? .success : .warning
+        )
+        StatusBadge(text: model.pdfWorkflowBusy ? "Running" : "Idle", tone: model.pdfWorkflowBusy ? .info : .neutral)
+        StatusBadge(text: UserFacingText.pdfWorkflowModeLabel(dryRun: model.pdfDraft.dryRun), tone: model.pdfDraft.dryRun ? .warning : .info)
+        StatusBadge(
+            text: model.dependencyHealth?.ffmpegAvailable == false ? "Optional Dependency Unavailable" : "Portable Export Ready",
+            tone: model.dependencyHealth?.ffmpegAvailable == false ? .warning : .success
         )
     }
 
@@ -187,28 +239,22 @@ struct PDFAudiobooksView: View {
             Task { await model.submitPDFJob() }
         }
         .buttonStyle(.borderedProminent)
-        .disabled(model.pdfWorkflowBusy)
+        .disabled(model.pdfSubmissionBlockedReason != nil)
+        .help(model.pdfSubmissionBlockedReason ?? "Start the current PDF workflow.")
 
         Button("Refresh Job Status") {
             Task { await model.refreshPDFJobStatus() }
         }
         .buttonStyle(.bordered)
-        .disabled(model.pdfJob == nil)
+        .disabled(model.pdfStatusRefreshBlockedReason != nil)
+        .help(model.pdfStatusRefreshBlockedReason ?? "Refresh the current job status.")
 
         Button("Clear Job") {
             model.resetPDFWorkflow()
         }
         .buttonStyle(.bordered)
         .disabled(model.pdfJob == nil && model.pdfStatusMessage.isEmpty)
-    }
-
-    private func badge(text: String, color: Color) -> some View {
-        Text(text)
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.15), in: Capsule())
-            .foregroundStyle(color)
+        .help("Clear the current PDF workflow state.")
     }
 
     private func chooseFile(allowedContentTypes: [UTType]) -> String? {
@@ -226,20 +272,5 @@ struct PDFAudiobooksView: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         return panel.runModal() == .OK ? panel.url?.path : nil
-    }
-}
-
-private struct PDFValueRow: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
-        }
     }
 }

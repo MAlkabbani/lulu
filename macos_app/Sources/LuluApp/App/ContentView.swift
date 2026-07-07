@@ -15,11 +15,6 @@ struct ContentView: View {
                     Label("Diagnostics", systemImage: "waveform.path.ecg")
                 }
 
-            SettingsView(model: model)
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape")
-                }
-
             PDFAudiobooksView(model: model)
                 .tabItem {
                     Label("PDF Audiobooks", systemImage: "book.closed")

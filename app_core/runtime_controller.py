@@ -685,9 +685,6 @@ def run_continuous_voice_loop(
                 reason=wake_analysis.reason,
                 event_bus=event_bus,
             )
-            ui.set_response(
-                f"Wake rejected before transcription (confidence {wake_analysis.confidence:.2f})."
-            )
             set_wake_guidance(
                 ui,
                 "Reduce nearby noise or move closer to the mic, then say the wake phrase clearly.",
@@ -730,7 +727,6 @@ def run_continuous_voice_loop(
             set_wake_guidance(
                 ui, "Wake matched quickly. Speak your request now.", event_bus=event_bus
             )
-            ui.set_response("Wake matched. Waiting for your request...")
             conversation_deadline = next_conversation_deadline(settings)
             set_conversation_window_remaining(
                 ui,
@@ -757,7 +753,6 @@ def run_continuous_voice_loop(
             event_bus=event_bus,
         )
         if not transcript:
-            ui.set_response("Wake scan produced no transcript. Listening again...")
             set_wake_guidance(
                 ui,
                 "Try speaking a little louder or closer to the mic, "
@@ -783,7 +778,6 @@ def run_continuous_voice_loop(
                 reason="self-audio-guard",
                 event_bus=event_bus,
             )
-            ui.set_response("Wake rejected: likely picked up Lulu's own voice.")
             set_wake_guidance(
                 ui,
                 "Wait until Lulu finishes speaking, then say the wake phrase again.",
@@ -801,11 +795,6 @@ def run_continuous_voice_loop(
                 accepted=False,
                 reason=rejection_reason,
                 event_bus=event_bus,
-            )
-            ui.set_response(
-                wake_rejection_response(
-                    reason=rejection_reason, score=wake_match.score, settings=settings
-                )
             )
             set_wake_guidance(
                 ui,
@@ -861,7 +850,6 @@ def run_continuous_voice_loop(
             )
             cooldown_until = perf_counter() + settings.wake_cooldown_seconds
         else:
-            ui.set_response("Wake matched. Waiting for your request...")
             set_ui_mode(
                 ui,
                 "conversation_window",
@@ -941,7 +929,6 @@ def transcribe_audio(
     record_latency(ui, "stt", perf_counter() - stt_start, event_bus=event_bus)
     if wake_scan and transcript:
         ui.set_transcript(transcript)
-        ui.set_response("Wake scan captured speech. Matching wake phrase...")
         set_wake_guidance(
             ui,
             "Checking whether the wake phrase matched what Whisper heard.",

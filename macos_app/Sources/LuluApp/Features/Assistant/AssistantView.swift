@@ -9,19 +9,20 @@ struct AssistantView: View {
             VStack(alignment: .leading, spacing: 16) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center) {
-                        statusLabel
+                        backendStatus
                         Spacer(minLength: 12)
                         statusBadges
                     }
                     VStack(alignment: .leading, spacing: 10) {
-                        statusLabel
+                        backendStatus
                         statusBadges
                     }
                 }
 
-                Text(model.connectionStatus)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                InlineNotice(
+                    model.connectionStatus,
+                    tone: model.backendHealthy ? .info : .warning
+                )
 
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 10) {
@@ -34,6 +35,10 @@ struct AssistantView: View {
 
                 GroupBox("Voice Controls") {
                     VStack(alignment: .leading, spacing: 12) {
+                        if let voiceStartBlockedReason = model.voiceStartBlockedReason {
+                            InlineNotice(voiceStartBlockedReason, tone: .warning)
+                        }
+
                         ViewThatFits(in: .horizontal) {
                             HStack(spacing: 10) {
                                 runtimeButtons
@@ -62,45 +67,43 @@ struct AssistantView: View {
                             }
                         }
 
-                        Text(model.voicePreflight.guidance)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                        InlineNotice(model.voicePreflight.guidance, tone: .info, systemImage: "mic.fill")
+                        InlineNotice(model.wakeGuidance, tone: .neutral, systemImage: "waveform")
 
-                        Text(model.wakeGuidance)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-
-                        ViewThatFits(in: .horizontal) {
-                            HStack {
-                                Text("Wake decision: \(model.wakeAttempt.decision)")
-                                Spacer(minLength: 12)
-                                Text("Accepted \(model.wakeAttempt.acceptedCount) / Rejected \(model.wakeAttempt.rejectedCount)")
-                                    .foregroundStyle(.secondary)
-                            }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Wake decision: \(model.wakeAttempt.decision)")
-                                Text("Accepted \(model.wakeAttempt.acceptedCount) / Rejected \(model.wakeAttempt.rejectedCount)")
-                                    .foregroundStyle(.secondary)
+                        GroupBox("Wake Readiness") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                LabeledValueRow(label: "Latest Decision", value: model.wakeAttempt.decision)
+                                LabeledValueRow(
+                                    label: "Accepted / Rejected",
+                                    value: "\(model.wakeAttempt.acceptedCount) / \(model.wakeAttempt.rejectedCount)"
+                                )
                             }
                         }
-                        .font(.caption)
                     }
                 }
 
                 GroupBox("Transcript") {
                     ScrollView {
-                        Text(model.transcript.isEmpty ? "Transcript events will appear here." : model.transcript)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
+                        if model.transcript.isEmpty {
+                            EmptyStateView(text: "Transcript activity appears here once Lulu hears speech.")
+                        } else {
+                            Text(model.transcript)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
                     }
                     .frame(minHeight: 120)
                 }
 
-                GroupBox("Assistant Response") {
+                GroupBox("Assistant Reply") {
                     ScrollView {
-                        Text(model.response.isEmpty ? "Streamed backend responses will appear here." : model.response)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
+                        if model.response.isEmpty {
+                            EmptyStateView(text: "Lulu's latest spoken reply appears here.")
+                        } else {
+                            Text(model.response)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
                     }
                     .frame(minHeight: 180)
                 }
@@ -111,102 +114,122 @@ struct AssistantView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var phaseColor: Color {
+    private var phaseTone: StatusTone {
         switch model.runtimeState?.mode {
         case "ready", "conversation_window":
-            return .green
+            return .success
+        case "passive_listening", "listening", "thinking", "transcribing", "streaming", "speaking":
+            return .info
         case "cooldown":
-            return .orange
+            return .warning
         case "startup_error", "capture_error", "stt_error", "tts_error", "stream_error", "runtime_error":
-            return .red
+            return .danger
         default:
-            return .secondary
+            return .neutral
         }
     }
 
-    @ViewBuilder
-    private var statusLabel: some View {
-        Label(model.backendHealthy ? "Backend Ready" : "Backend Unavailable", systemImage: model.backendHealthy ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-            .foregroundStyle(model.backendHealthy ? .green : .orange)
+    private var backendStatus: some View {
+        Label(
+            model.backendHealthy ? UserFacingText.backendReady : UserFacingText.backendUnavailable,
+            systemImage: model.backendHealthy ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+        )
+        .foregroundStyle(model.backendHealthy ? Color.green : Color.orange)
+        .accessibilityElement(children: .combine)
     }
 
-    @ViewBuilder
     private var statusBadges: some View {
-        badge(text: model.runtimeState?.runtimeMode.capitalized ?? "Booting", color: .blue)
-        badge(text: (model.runtimeState?.mode ?? "starting").replacingOccurrences(of: "_", with: " ").capitalized, color: phaseColor)
+        HStack(spacing: 8) {
+            StatusBadge(
+                text: UserFacingText.runtimeModeLabel(model.runtimeState?.runtimeMode),
+                tone: .info
+            )
+            StatusBadge(
+                text: UserFacingText.runtimePhaseLabel(model.runtimeState?.mode),
+                tone: phaseTone
+            )
+        }
     }
 
-    @ViewBuilder
     private var conversationBadges: some View {
-        if let remaining = model.conversationWindowRemaining {
-            badge(text: String(format: "Window %.1fs", remaining), color: .cyan)
+        HStack(spacing: 8) {
+            if let remaining = model.conversationWindowRemaining {
+                StatusBadge(text: String(format: "Window %.1fs", remaining), tone: .info)
+            }
+            if let remaining = model.cooldownRemaining {
+                StatusBadge(text: String(format: "Cooldown %.1fs", remaining), tone: .warning)
+            }
+            StatusBadge(
+                text: "Wake Score \(String(format: "%.2f", model.wakeAttempt.score))",
+                tone: model.wakeAttempt.accepted ? .success : .neutral
+            )
         }
-        if let remaining = model.cooldownRemaining {
-            badge(text: String(format: "Cooldown %.1fs", remaining), color: .orange)
-        }
-        badge(text: "Wake \(String(format: "%.2f", model.wakeAttempt.score))", color: model.wakeAttempt.accepted ? .green : .purple)
     }
 
-    @ViewBuilder
     private var runtimeButtons: some View {
-        Button("Continuous Voice") {
-            Task { await model.startContinuousVoiceMode() }
-        }
-        Button("Turn-Based Voice") {
-            Task { await model.startTurnBasedVoiceMode() }
-        }
-        Button("Stop Runtime") {
-            Task { await model.stopRuntime() }
+        Group {
+            Button("Continuous Voice") {
+                Task { await model.startContinuousVoiceMode() }
+            }
+            .disabled(model.voiceStartBlockedReason != nil)
+            .help(model.voiceStartBlockedReason ?? "Start continuous listening.")
+
+            Button("Turn-Based Voice") {
+                Task { await model.startTurnBasedVoiceMode() }
+            }
+            .disabled(model.voiceStartBlockedReason != nil)
+            .help(model.voiceStartBlockedReason ?? "Start one-turn voice capture.")
+
+            Button("Stop Runtime") {
+                Task { await model.stopRuntime() }
+            }
+            .disabled(model.stopRuntimeBlockedReason != nil)
+            .help(model.stopRuntimeBlockedReason ?? "Stop the current voice runtime.")
         }
     }
 
-    @ViewBuilder
     private var voiceReadinessBadges: some View {
-        badge(
-            text: "Mic \(model.voicePreflight.microphoneStatus.replacingOccurrences(of: "_", with: " ").capitalized)",
-            color: microphoneBadgeColor
-        )
-        badge(
-            text: model.voicePreflight.backendAudioInputAvailable ? "Backend Audio Ready" : "Backend Audio Missing",
-            color: model.voicePreflight.backendAudioInputAvailable ? .green : .red
-        )
-        badge(
-            text: model.voicePreflight.ttsAvailable ? "TTS Ready" : "TTS Missing",
-            color: model.voicePreflight.ttsAvailable ? .green : .red
-        )
+        HStack(spacing: 8) {
+            StatusBadge(
+                text: "Microphone \(UserFacingText.microphoneStatusLabel(model.voicePreflight.microphoneStatus))",
+                tone: microphoneTone
+            )
+            StatusBadge(
+                text: "Audio Input \(UserFacingText.availabilityLabel(model.voicePreflight.backendAudioInputAvailable))",
+                tone: model.voicePreflight.backendAudioInputAvailable ? .success : .danger
+            )
+            StatusBadge(
+                text: "Text-to-Speech \(UserFacingText.availabilityLabel(model.voicePreflight.ttsAvailable))",
+                tone: model.voicePreflight.ttsAvailable ? .success : .danger
+            )
+        }
     }
 
-    @ViewBuilder
     private var microphoneButtons: some View {
-        Button("Request Microphone Access") {
-            Task { await model.requestMicrophoneAccess() }
+        Group {
+            Button("Request Microphone Access") {
+                Task { await model.requestMicrophoneAccess() }
+            }
+            .help("Prompt for microphone permission if macOS has not asked yet.")
+
+            Button("Open Privacy Settings") {
+                model.openPrivacySettings()
+            }
+            .help("Open the macOS Microphone privacy settings.")
+            .buttonStyle(.bordered)
         }
-        Button("Open Privacy Settings") {
-            model.openPrivacySettings()
-        }
-        .buttonStyle(.bordered)
     }
 
-    private func badge(text: String, color: Color) -> some View {
-        Text(text)
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.15), in: Capsule())
-            .foregroundStyle(color)
-    }
-
-    private var microphoneBadgeColor: Color {
+    private var microphoneTone: StatusTone {
         switch model.voicePreflight.microphoneStatus {
         case "authorized":
-            return .green
+            return .success
         case "denied", "restricted":
-            return .red
+            return .danger
         case "not_determined":
-            return .orange
+            return .warning
         default:
-            return .secondary
+            return .neutral
         }
     }
-
 }

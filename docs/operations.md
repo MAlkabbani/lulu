@@ -131,7 +131,7 @@ export LULU_RESTART_BACKOFF_SECONDS="2"
 
 ### Scope
 
-Stage 1 of the desktop-app migration adds a local authenticated service boundary on top of the existing Python runtime. This is primarily for future macOS desktop integration and does not replace the repo-local CLI startup flow yet.
+The local authenticated backend service is now the active shared service boundary for both the repo-local CLI workflows and the current macOS desktop preview. It does not replace the repo-local startup flow, but it is no longer only a future integration seam.
 
 ### Run the service
 

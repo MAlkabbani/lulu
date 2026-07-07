@@ -6,7 +6,7 @@ This directory is the public documentation surface for Lulu VAIA.
 
 - [Architecture](./architecture.md)
 - [Operations Runbook](./operations.md)
-- [PDF To Audiobooks](./pdf-audiobooks.md)
+- [PDF Audiobooks](./pdf-audiobooks.md)
 - [Product Requirements](./prd.md)
 - [Decision Log](./decision-log.md)
 - [Wake Performance Report](./wake-performance-report.md)

@@ -14,9 +14,21 @@ from config import Settings
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Lulu's local backend service.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--launch-token")
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Loopback host for the local backend service. Default: 127.0.0.1.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Loopback port for the backend service. Use 0 to choose a free port.",
+    )
+    parser.add_argument(
+        "--launch-token",
+        help="Optional launch token. If omitted, the runner reads LULU_SERVICE_LAUNCH_TOKEN.",
+    )
     return parser
 
 

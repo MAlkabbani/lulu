@@ -1,4 +1,4 @@
-# PDF To Audiobooks
+# PDF Audiobooks
 
 Lulu now includes a repo-local PDF-to-audiobook workflow for text-based PDFs.
 

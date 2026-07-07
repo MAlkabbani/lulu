@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var connectionStatus: String = "Starting backend..."
+    @Published var connectionStatus: String = "Starting local backend..."
     @Published var backendHealthy = false
     @Published var websocketConnected = false
     @Published var runtimeState: RuntimeStateResponse?
@@ -23,10 +23,10 @@ final class AppModel: ObservableObject {
     @Published var latencies: [String: Double] = [:]
     @Published var ttsProgress = TTSProgressSnapshot()
     @Published var savedMemories: [String] = []
-    @Published var invocationSummary = "No invocation path yet."
+    @Published var invocationSummary = UserFacingText.noActivityYet
     @Published var memoryHitCount = 0
-    @Published var actionSummary = "No action summary yet."
-    @Published var currentToolStatus = "idle"
+    @Published var actionSummary = UserFacingText.noActivityYet
+    @Published var currentToolStatus = UserFacingText.noActivityYet
     @Published var recentWakeAttempts: [String] = []
     @Published var recentRuntimeEvents: [String] = []
     @Published var voicePreflight = VoicePreflightSnapshot()
@@ -51,9 +51,9 @@ final class AppModel: ObservableObject {
             try await backend.launchIfNeeded()
             try await backend.waitUntilHealthy()
             backendHealthy = true
-            connectionStatus = "Backend healthy. Connecting runtime events..."
+            connectionStatus = "Backend ready. Connecting runtime events..."
             await attachEvents()
-            connectionStatus = "Backend healthy. Loading runtime state..."
+            connectionStatus = "Backend ready. Loading runtime state..."
             async let fetchedSettings = backend.fetchSettings()
             async let fetchedDependencies = backend.fetchDependencies()
             async let fetchedState = backend.fetchRuntimeState()
@@ -67,7 +67,7 @@ final class AppModel: ObservableObject {
                 settingsDraft = SettingsDraft(from: settings)
                 applyDefaultPDFOutputDirectory(from: settings)
             }
-            connectionStatus = "Desktop shell connected to Lulu backend. Start a voice runtime when ready."
+            connectionStatus = "Desktop shell connected to Lulu. Start a voice runtime when ready."
             appendEvent("Desktop shell bootstrapped successfully.")
         } catch {
             backendHealthy = false
@@ -75,7 +75,7 @@ final class AppModel: ObservableObject {
             runtimeState = nil
             dependencyHealth = nil
             runtimeActive = false
-            connectionStatus = "Failed to bootstrap backend."
+            connectionStatus = "Failed to start the local backend."
             diagnosticsNote = error.localizedDescription
             appendEvent("Bootstrap failed: \(error.localizedDescription)")
         }
@@ -120,14 +120,14 @@ final class AppModel: ObservableObject {
         do {
             let update = try await backend.saveSettings(settingsDraft)
             settingsSaveMessage = update.restartRequired
-                ? "Saved to \(update.configPath). Restart required."
-                : "Saved."
+                ? "Settings saved to \(update.configPath). Restart the app to apply every change."
+                : "Settings saved."
             settings = try await backend.fetchSettings()
             if let settings {
                 settingsDraft = SettingsDraft(from: settings)
                 applyDefaultPDFOutputDirectory(from: settings)
             }
-            appendEvent("Settings saved for desktop shell preview.")
+            appendEvent("Settings saved for the desktop app.")
         } catch {
             settingsSaveMessage = "Save failed: \(error.localizedDescription)"
             appendEvent("Settings save failed: \(error.localizedDescription)")
@@ -166,7 +166,7 @@ final class AppModel: ObservableObject {
         do {
             runtimeState = try await backend.stopRuntime()
             runtimeActive = false
-            connectionStatus = "Runtime stopped."
+            connectionStatus = "Voice runtime stopped."
             appendEvent("Runtime stopped from desktop shell.")
         } catch {
             diagnosticsNote = "Stop failed: \(error.localizedDescription)"
@@ -197,7 +197,7 @@ final class AppModel: ObservableObject {
                 try await persistPDFExportRootIfNeeded(selectedOutputDir)
             } catch {
                 pdfWorkflowBusy = false
-                pdfStatusMessage = "Could not save export root: \(error.localizedDescription)"
+                pdfStatusMessage = "Could not save the export folder: \(error.localizedDescription)"
                 appendEvent("PDF export root save failed: \(error.localizedDescription)")
                 return
             }
@@ -210,7 +210,7 @@ final class AppModel: ObservableObject {
         }
         let effectiveOutputDir = request.outputDir ?? settings?.exportsPath ?? ""
         guard !effectiveOutputDir.isEmpty else {
-            pdfStatusMessage = "Choose an export destination before starting a job."
+            pdfStatusMessage = "Choose an export folder before starting a job."
             return
         }
         if !request.dryRun && request.portableFormat != "none" && dependencyHealth?.ffmpegAvailable == false {
@@ -223,7 +223,7 @@ final class AppModel: ObservableObject {
         do {
             let response = try await backend.createPDFJob(request)
             pdfJob = response
-            pdfStatusMessage = response.dryRun ? "PDF dry run queued." : "PDF audiobook job queued."
+            pdfStatusMessage = response.dryRun ? "PDF dry run queued." : "PDF audiobook export queued."
             appendEvent("PDF job queued: \(response.jobID)")
             startPollingPDFJob(jobID: response.jobID)
         } catch {
@@ -235,7 +235,7 @@ final class AppModel: ObservableObject {
 
     func refreshPDFJobStatus() async {
         guard let jobID = pdfJob?.jobID else {
-            pdfStatusMessage = "No PDF job has been started yet."
+            pdfStatusMessage = UserFacingText.noActivityYet
             return
         }
         guard await ensureBackendReady(for: "PDF status refresh", allowBootstrapRetry: true) else {
@@ -365,7 +365,7 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            connectionStatus = "Starting \(mode) runtime..."
+            connectionStatus = "Starting \(UserFacingText.runtimeModeLabel(mode))..."
             runtimeState = try await backend.startRuntime(mode: mode)
             if let diagnostics = try? await backend.fetchRuntimeDiagnostics() {
                 apply(diagnostics: diagnostics)
@@ -374,7 +374,7 @@ final class AppModel: ObservableObject {
             appendEvent(successMessage)
         } catch {
             diagnosticsNote = "Runtime start failed: \(error.localizedDescription)"
-            connectionStatus = "Failed to start \(mode) runtime."
+            connectionStatus = "Failed to start \(UserFacingText.runtimeModeLabel(mode))."
             appendEvent("Runtime start failed: \(error.localizedDescription)")
         }
     }
@@ -412,7 +412,7 @@ final class AppModel: ObservableObject {
             case "running":
                 pdfStatusMessage = response.dryRun ? "PDF dry run is running..." : "PDF audiobook export is running..."
             default:
-                pdfStatusMessage = response.dryRun ? "PDF dry run is pending..." : "PDF audiobook job is pending..."
+                pdfStatusMessage = response.dryRun ? "PDF dry run is pending..." : "PDF audiobook export is pending..."
             }
         } catch {
             if updateBusyState {
@@ -433,7 +433,7 @@ final class AppModel: ObservableObject {
         }
         let message = "\(action) blocked: the backend is unavailable."
         diagnosticsNote = message
-        connectionStatus = "Backend unavailable."
+        connectionStatus = UserFacingText.backendUnavailable
         appendEvent(message)
         return false
     }
@@ -545,5 +545,64 @@ final class AppModel: ObservableObject {
         default:
             return "Microphone access state is unknown. Refresh diagnostics or retry voice startup."
         }
+    }
+
+    var voiceStartBlockedReason: String? {
+        if runtimeActive {
+            return "Stop the current voice runtime before starting another one."
+        }
+        if !backendHealthy {
+            return "The local backend is unavailable."
+        }
+        if !voicePreflight.backendAudioInputAvailable {
+            return "Audio input is unavailable."
+        }
+        if !voicePreflight.ttsAvailable {
+            return "Text-to-speech is unavailable."
+        }
+        switch voicePreflight.microphoneStatus {
+        case "denied":
+            return "Microphone access is denied. Allow access in macOS Privacy settings first."
+        case "restricted":
+            return "Microphone access is restricted by macOS or device policy."
+        default:
+            return nil
+        }
+    }
+
+    var stopRuntimeBlockedReason: String? {
+        if !backendHealthy {
+            return "The local backend is unavailable."
+        }
+        if !runtimeActive {
+            return "No voice runtime is active."
+        }
+        return nil
+    }
+
+    var pdfSubmissionBlockedReason: String? {
+        if pdfWorkflowBusy {
+            return "A PDF job is already running."
+        }
+        if !backendHealthy {
+            return "The local backend is unavailable."
+        }
+        if pdfDraft.pdfPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Choose a PDF file before starting a job."
+        }
+        let effectiveOutputDir = pdfDraft.outputDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? (settings?.exportsPath ?? "")
+            : pdfDraft.outputDir
+        if effectiveOutputDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Choose an export folder before starting a job."
+        }
+        if !pdfDraft.dryRun && pdfDraft.portableFormat != "none" && dependencyHealth?.ffmpegAvailable == false {
+            return "Install ffmpeg or switch Portable Format to None for AIFF-only export."
+        }
+        return nil
+    }
+
+    var pdfStatusRefreshBlockedReason: String? {
+        pdfJob == nil ? "No PDF job is available yet." : nil
     }
 }

@@ -588,7 +588,7 @@ def test_transcribe_audio_reports_dependency_error_on_whisper_failure() -> None:
     assert "mlx whisper model load failed" in ui.state.status_line
 
 
-def test_transcribe_audio_wake_scan_updates_transcript_and_response() -> None:
+def test_transcribe_audio_wake_scan_updates_transcript_and_guidance() -> None:
     class SuccessfulAudioHandler:
         settings = build_settings()
         initial_prompt: str | None = None
@@ -615,4 +615,5 @@ def test_transcribe_audio_wake_scan_updates_transcript_and_response() -> None:
     assert transcript == "hey lulu what time is it"
     assert handler.initial_prompt == handler.settings.wake_phrase
     assert ui.state.transcript == "hey lulu what time is it"
-    assert ui.state.response == "Wake scan captured speech. Matching wake phrase..."
+    assert ui.state.response == ""
+    assert ui.state.wake_guidance == "Checking whether the wake phrase matched what Whisper heard."

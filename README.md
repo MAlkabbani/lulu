@@ -35,7 +35,7 @@ Support ongoing development: [Buy Me a Coffee](https://buymeacoffee.com/webeworx
 - [Architecture](./docs/architecture.md)
 - [Operations Runbook](./docs/operations.md)
 - [Uninstall Guide](./docs/operations.md#uninstall)
-- [PDF To Audiobooks](./docs/pdf-audiobooks.md)
+- [PDF Audiobooks](./docs/pdf-audiobooks.md)
 - [Product Requirements](./docs/prd.md)
 - [Decision Log](./docs/decision-log.md)
 - [Wake Performance Report](./docs/wake-performance-report.md)
@@ -208,10 +208,10 @@ End-user flow from the repo root:
 2. Replace `/path/to/book.pdf` with a real local PDF path on your machine.
 3. Run a dry-run first to confirm Lulu can read and clean the PDF text.
 4. Generate section audio once the preview looks right.
-4. Add `--portable-format` only if you also want `wav`, `m4a`, or `mp3` copies.
-5. Use `--play-after-export` to listen immediately, or `--play-export` to play an existing export later.
-6. Check `manifest.json` for the run summary, including whether audio render and portable conversion succeeded.
-7. Reruns with the same title now create a new unique folder instead of failing.
+5. Add `--portable-format` only if you also want `wav`, `m4a`, or `mp3` copies.
+6. Use `--play-after-export` to listen immediately, or `--play-export` to play an existing export later.
+7. Check `manifest.json` for the run summary, including whether audio render and portable conversion succeeded.
+8. Reruns with the same title now create a new unique folder instead of failing.
 
 Recommended first run:
 

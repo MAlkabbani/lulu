@@ -23,7 +23,7 @@ class UIState:
     last_error: str = ""
     transcript: str = ""
     response: str = ""
-    invocation_path: str = "chat-only"
+    invocation_path: str = "chat_only"
     invocation_summary: str = "No invocation path yet."
     action_summary: str = "Awaiting action decision."
     current_tool_status: str = "No backend tool used."
@@ -332,7 +332,7 @@ class TerminalUI:
             self.state.latencies_ms = {}
             self.state.transcript = ""
             self.state.response = ""
-            self.state.invocation_path = "chat-only"
+            self.state.invocation_path = "chat_only"
             self.state.invocation_summary = "Awaiting invocation decision."
             self.state.action_summary = "Awaiting action decision."
             self.state.current_tool_status = "No backend tool used."
@@ -422,7 +422,7 @@ class TerminalUI:
                 ),
                 Panel(
                     self._render_response(),
-                    title="Response",
+                    title="Assistant Reply",
                     expand=True,
                     border_style="bright_green",
                 ),
@@ -654,7 +654,7 @@ class TerminalUI:
 
     def _render_response(self) -> Text:
         if not self.state.response:
-            return Text("No response yet.", style="dim", overflow="fold")
+            return Text("No assistant reply yet.", style="dim", overflow="fold")
         return Text(self.state.response, style="bright_green", overflow="fold")
 
     def _render_saves(self) -> Table:
@@ -687,10 +687,10 @@ class TerminalUI:
     def _runtime_badge(self) -> Text:
         if self.state.runtime_mode == "turn-based":
             return Text("TURN-BASED", style="bold yellow")
-        return Text("CONTINUOUS", style="bold green")
+        return Text("CONTINUOUS VOICE", style="bold green")
 
     def _mode_badge(self) -> Text:
-        return Text(self.state.mode.upper(), style=self._mode_style())
+        return Text(self._mode_label(), style=self._mode_style())
 
     def _invocation_badge(self) -> Text:
         labels = {
@@ -721,6 +721,30 @@ class TerminalUI:
         else:
             style = "dim"
         return Text(status, style=style, overflow="fold")
+
+    def _mode_label(self) -> str:
+        labels = {
+            "starting": "STARTING",
+            "ready": "READY",
+            "idle": "IDLE",
+            "passive_listening": "LISTENING FOR WAKE PHRASE",
+            "listening": "LISTENING",
+            "wake_detected": "MATCHING WAKE PHRASE",
+            "conversation_window": "CONVERSATION WINDOW",
+            "cooldown": "COOLDOWN",
+            "transcribing": "TRANSCRIBING",
+            "thinking": "THINKING",
+            "streaming": "GENERATING RESPONSE",
+            "speaking": "SPEAKING",
+            "startup_error": "STARTUP ERROR",
+            "capture_error": "CAPTURE ERROR",
+            "router_error": "ROUTER ERROR",
+            "stt_error": "TRANSCRIPTION ERROR",
+            "tts_error": "SPEECH ERROR",
+            "stream_error": "STREAM ERROR",
+            "runtime_error": "RUNTIME ERROR",
+        }
+        return labels.get(self.state.mode, self.state.mode.replace("_", " ").upper())
 
     def _remember_action_step(self, friendly_name: str) -> None:
         if self.state.action_steps and self.state.action_steps[-1] == friendly_name:

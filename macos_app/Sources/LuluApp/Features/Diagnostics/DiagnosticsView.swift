@@ -6,99 +6,159 @@ struct DiagnosticsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                GroupBox("Runtime Health") {
+                GroupBox("Overview") {
                     VStack(alignment: .leading, spacing: 8) {
-                        KeyValueRow(label: "Backend", value: model.backendHealthy ? "Healthy" : "Unavailable")
-                        KeyValueRow(label: "WebSocket", value: model.websocketConnected ? "Connected" : "Disconnected")
-                        KeyValueRow(label: "Mode", value: model.runtimeState?.runtimeMode ?? "unknown")
-                        KeyValueRow(label: "State", value: model.runtimeState?.mode ?? "unknown")
-                        KeyValueRow(label: "Status", value: model.runtimeState?.statusLine ?? "Waiting for runtime state")
-                        KeyValueRow(label: "Runtime Active", value: model.runtimeActive ? "Yes" : "No")
+                        LabeledValueRow(
+                            label: "Backend",
+                            value: model.backendHealthy ? UserFacingText.backendReady : UserFacingText.backendUnavailable
+                        )
+                        LabeledValueRow(
+                            label: "Event Stream",
+                            value: model.websocketConnected ? "Connected" : "Disconnected"
+                        )
+                        LabeledValueRow(
+                            label: "Voice Mode",
+                            value: UserFacingText.runtimeModeLabel(model.runtimeState?.runtimeMode)
+                        )
+                        LabeledValueRow(
+                            label: "Runtime Phase",
+                            value: UserFacingText.runtimePhaseLabel(model.runtimeState?.mode)
+                        )
+                        LabeledValueRow(
+                            label: "Status",
+                            value: UserFacingText.textOrFallback(
+                                model.runtimeState?.statusLine,
+                                fallback: "Waiting for runtime state."
+                            )
+                        )
+                        LabeledValueRow(label: "Runtime Active", value: model.runtimeActive ? "Yes" : "No")
                     }
                 }
 
-                GroupBox("Voice Preflight") {
+                GroupBox("Voice Readiness") {
                     VStack(alignment: .leading, spacing: 8) {
-                        KeyValueRow(label: "Microphone Access", value: model.voicePreflight.microphoneStatus)
-                        KeyValueRow(label: "Backend Audio Input", value: model.voicePreflight.backendAudioInputAvailable ? "Available" : "Unavailable")
-                        KeyValueRow(label: "Backend TTS", value: model.voicePreflight.ttsAvailable ? "Available" : "Unavailable")
-                        KeyValueRow(label: "Guidance", value: model.voicePreflight.guidance)
-                    }
-                }
-
-                GroupBox("Wake") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        KeyValueRow(label: "Guidance", value: model.wakeGuidance)
-                        KeyValueRow(label: "Last Decision", value: model.wakeAttempt.decision)
-                        KeyValueRow(label: "Transcript", value: model.wakeAttempt.transcript.isEmpty ? "None" : model.wakeAttempt.transcript)
-                        KeyValueRow(label: "Reason", value: model.wakeAttempt.reason.isEmpty ? "None" : model.wakeAttempt.reason)
-                        KeyValueRow(label: "Score", value: String(format: "%.2f", model.wakeAttempt.score))
-                        KeyValueRow(label: "Accepted/Rejected", value: "\(model.wakeAttempt.acceptedCount)/\(model.wakeAttempt.rejectedCount)")
-                        KeyValueRow(label: "Confidence", value: formatted(model.wakeSignal.confidence))
-                        KeyValueRow(label: "Threshold", value: formatted(model.wakeSignal.threshold))
-                        KeyValueRow(label: "Acoustic", value: formatted(model.wakeSignal.acousticScore))
-                        KeyValueRow(label: "DTW", value: formatted(model.wakeSignal.dtwScore))
-                        KeyValueRow(label: "SNR dB", value: formatted(model.wakeSignal.snrDB))
-                        KeyValueRow(label: "Feature Frames", value: "\(model.wakeSignal.featureFrames)")
+                        LabeledValueRow(
+                            label: "Microphone Access",
+                            value: UserFacingText.microphoneStatusLabel(model.voicePreflight.microphoneStatus)
+                        )
+                        LabeledValueRow(
+                            label: "Audio Input",
+                            value: UserFacingText.availabilityLabel(model.voicePreflight.backendAudioInputAvailable)
+                        )
+                        LabeledValueRow(
+                            label: "Text-to-Speech",
+                            value: UserFacingText.availabilityLabel(model.voicePreflight.ttsAvailable)
+                        )
+                        InlineNotice(model.voicePreflight.guidance, tone: .info, systemImage: "mic.fill")
                     }
                 }
 
                 GroupBox("Dependencies") {
                     VStack(alignment: .leading, spacing: 8) {
-                        KeyValueRow(label: "Ollama", value: model.dependencyHealth?.ollamaReachable == true ? "Reachable" : "Unavailable")
-                        KeyValueRow(label: "Chat Model", value: model.dependencyHealth?.chatModelAvailable == true ? "Present" : "Missing")
-                        KeyValueRow(label: "Embedding Model", value: model.dependencyHealth?.embeddingModelAvailable == true ? "Present" : "Missing")
-                        KeyValueRow(label: "Audio Input", value: model.dependencyHealth?.audioInputAvailable == true ? "Available" : "Unavailable")
-                        KeyValueRow(label: "TTS", value: model.dependencyHealth?.ttsAvailable == true ? "Available" : "Unavailable")
-                        KeyValueRow(label: "ffmpeg", value: model.dependencyHealth?.ffmpegAvailable == true ? "Available" : "Unavailable")
-                        KeyValueRow(label: "Memory Path", value: model.dependencyHealth?.memoryPathAvailable == true ? "Ready" : "Unavailable")
+                        LabeledValueRow(
+                            label: "Ollama",
+                            value: model.dependencyHealth?.ollamaReachable == true ? "Available" : "Unavailable"
+                        )
+                        LabeledValueRow(
+                            label: "Chat Model",
+                            value: UserFacingText.availabilityLabel(model.dependencyHealth?.chatModelAvailable)
+                        )
+                        LabeledValueRow(
+                            label: "Embedding Model",
+                            value: UserFacingText.availabilityLabel(model.dependencyHealth?.embeddingModelAvailable)
+                        )
+                        LabeledValueRow(
+                            label: "Audio Input",
+                            value: UserFacingText.availabilityLabel(model.dependencyHealth?.audioInputAvailable)
+                        )
+                        LabeledValueRow(
+                            label: "Text-to-Speech",
+                            value: UserFacingText.availabilityLabel(model.dependencyHealth?.ttsAvailable)
+                        )
+                        LabeledValueRow(
+                            label: "ffmpeg",
+                            value: UserFacingText.availabilityLabel(model.dependencyHealth?.ffmpegAvailable)
+                        )
+                        LabeledValueRow(
+                            label: "Memory Path",
+                            value: UserFacingText.availabilityLabel(model.dependencyHealth?.memoryPathAvailable)
+                        )
                         if let issues = model.dependencyHealth?.issues, !issues.isEmpty {
-                            Divider()
                             ForEach(issues, id: \.self) { issue in
-                                Label(issue, systemImage: "exclamationmark.triangle")
-                                    .foregroundStyle(.orange)
+                                InlineNotice(issue, tone: .warning)
                             }
                         }
+                    }
+                }
+
+                GroupBox("Wake") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        InlineNotice(model.wakeGuidance, tone: .neutral, systemImage: "waveform")
+                        LabeledValueRow(label: "Latest Decision", value: model.wakeAttempt.decision)
+                        LabeledValueRow(
+                            label: "Transcript",
+                            value: UserFacingText.textOrFallback(model.wakeAttempt.transcript)
+                        )
+                        LabeledValueRow(
+                            label: "Reason",
+                            value: UserFacingText.textOrFallback(model.wakeAttempt.reason)
+                        )
+                        LabeledValueRow(label: "Score", value: String(format: "%.2f", model.wakeAttempt.score))
+                        LabeledValueRow(
+                            label: "Accepted / Rejected",
+                            value: "\(model.wakeAttempt.acceptedCount) / \(model.wakeAttempt.rejectedCount)"
+                        )
+                        LabeledValueRow(label: "Confidence", value: formatted(model.wakeSignal.confidence))
+                        LabeledValueRow(label: "Threshold", value: formatted(model.wakeSignal.threshold))
+                        LabeledValueRow(label: "Acoustic Score", value: formatted(model.wakeSignal.acousticScore))
+                        LabeledValueRow(label: "DTW Score", value: formatted(model.wakeSignal.dtwScore))
+                        LabeledValueRow(label: "Signal-to-Noise Ratio", value: formatted(model.wakeSignal.snrDB))
+                        LabeledValueRow(label: "Feature Frames", value: "\(model.wakeSignal.featureFrames)")
                     }
                 }
 
                 GroupBox("Latency") {
                     VStack(alignment: .leading, spacing: 8) {
                         if model.latencies.isEmpty {
-                            Text("No latency samples yet.")
-                                .foregroundStyle(.secondary)
+                            EmptyStateView(text: "No data yet.")
                         } else {
                             ForEach(model.latencies.keys.sorted(), id: \.self) { key in
-                                KeyValueRow(label: key, value: String(format: "%.1f ms", model.latencies[key] ?? 0))
+                                LabeledValueRow(label: key, value: String(format: "%.1f ms", model.latencies[key] ?? 0))
                             }
                         }
                     }
                 }
 
-                GroupBox("TTS") {
+                GroupBox("Speech And Actions") {
                     VStack(alignment: .leading, spacing: 8) {
-                        KeyValueRow(label: "Emitted Chunks", value: "\(model.ttsProgress.emittedChunkCount)")
-                        KeyValueRow(label: "Spoken Chunks", value: "\(model.ttsProgress.spokenChunkCount)")
-                        KeyValueRow(label: "Emitted Chars", value: "\(model.ttsProgress.emittedCharCount)")
-                        KeyValueRow(label: "Spoken Chars", value: "\(model.ttsProgress.spokenCharCount)")
-                        KeyValueRow(label: "Last Emitted", value: model.ttsProgress.lastEmittedChunk.isEmpty ? "None" : model.ttsProgress.lastEmittedChunk)
-                        KeyValueRow(label: "Last Spoken", value: model.ttsProgress.lastSpokenChunk.isEmpty ? "None" : model.ttsProgress.lastSpokenChunk)
-                        KeyValueRow(label: "Action Summary", value: model.actionSummary)
-                        KeyValueRow(label: "Tool Status", value: model.currentToolStatus)
+                        LabeledValueRow(label: "Emitted Chunks", value: "\(model.ttsProgress.emittedChunkCount)")
+                        LabeledValueRow(label: "Spoken Chunks", value: "\(model.ttsProgress.spokenChunkCount)")
+                        LabeledValueRow(label: "Emitted Characters", value: "\(model.ttsProgress.emittedCharCount)")
+                        LabeledValueRow(label: "Spoken Characters", value: "\(model.ttsProgress.spokenCharCount)")
+                        LabeledValueRow(
+                            label: "Last Emitted Chunk",
+                            value: UserFacingText.textOrFallback(model.ttsProgress.lastEmittedChunk)
+                        )
+                        LabeledValueRow(
+                            label: "Last Spoken Chunk",
+                            value: UserFacingText.textOrFallback(model.ttsProgress.lastSpokenChunk)
+                        )
+                        LabeledValueRow(label: "Action Summary", value: model.actionSummary)
+                        LabeledValueRow(label: "Action Status", value: model.currentToolStatus)
                     }
                 }
 
                 GroupBox("Memory And Routing") {
                     VStack(alignment: .leading, spacing: 8) {
-                        KeyValueRow(label: "Invocation", value: model.invocationSummary)
-                        KeyValueRow(label: "Memory Hits", value: "\(model.memoryHitCount)")
+                        LabeledValueRow(label: "Invocation", value: model.invocationSummary)
+                        LabeledValueRow(label: "Memory Hits", value: "\(model.memoryHitCount)")
                         if model.savedMemories.isEmpty {
-                            Text("No recent saved memories.")
-                                .foregroundStyle(.secondary)
+                            EmptyStateView(text: "No activity yet.")
                         } else {
                             ForEach(model.savedMemories, id: \.self) { item in
                                 Text(item)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
                             }
                         }
                     }
@@ -107,8 +167,7 @@ struct DiagnosticsView: View {
                 GroupBox("Recent Wake Attempts") {
                     VStack(alignment: .leading, spacing: 8) {
                         if model.recentWakeAttempts.isEmpty {
-                            Text("No recent wake attempts.")
-                                .foregroundStyle(.secondary)
+                            EmptyStateView(text: "No activity yet.")
                         } else {
                             ForEach(model.recentWakeAttempts, id: \.self) { attempt in
                                 Text(attempt)
@@ -119,11 +178,10 @@ struct DiagnosticsView: View {
                     }
                 }
 
-                GroupBox("Recent Runtime Snapshot Events") {
+                GroupBox("Recent Runtime Events") {
                     VStack(alignment: .leading, spacing: 8) {
                         if model.recentRuntimeEvents.isEmpty {
-                            Text("No recent runtime snapshot events.")
-                                .foregroundStyle(.secondary)
+                            EmptyStateView(text: "No activity yet.")
                         } else {
                             ForEach(model.recentRuntimeEvents, id: \.self) { event in
                                 Text(event)
@@ -133,13 +191,17 @@ struct DiagnosticsView: View {
                     }
                 }
 
-                GroupBox("Recent Events") {
+                GroupBox("Event Log") {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(model.eventLog.enumerated()), id: \.offset) { _, line in
-                                Text(line)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .font(.system(.body, design: .monospaced))
+                            if model.eventLog.isEmpty {
+                                EmptyStateView(text: "No activity yet.")
+                            } else {
+                                ForEach(Array(model.eventLog.enumerated()), id: \.offset) { _, line in
+                                    Text(line)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .font(.system(.body, design: .monospaced))
+                                }
                             }
                         }
                     }
@@ -147,9 +209,13 @@ struct DiagnosticsView: View {
                 }
 
                 GroupBox("Backend Notes") {
-                    Text(model.diagnosticsNote.isEmpty ? "No backend notes yet." : model.diagnosticsNote)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    if model.diagnosticsNote.isEmpty {
+                        EmptyStateView(text: "No data yet.")
+                    } else {
+                        Text(model.diagnosticsNote)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
                 }
 
                 HStack {
@@ -167,23 +233,8 @@ struct DiagnosticsView: View {
 
     private func formatted(_ value: Double?) -> String {
         guard let value else {
-            return "n/a"
+            return UserFacingText.noDataYet
         }
         return String(format: "%.2f", value)
-    }
-}
-
-private struct KeyValueRow: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.medium)
-        }
     }
 }

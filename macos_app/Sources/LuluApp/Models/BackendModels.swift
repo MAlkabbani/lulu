@@ -438,7 +438,7 @@ struct WakeAttemptSnapshot {
     var reason: String = ""
     var score: Double = 0
     var accepted: Bool = false
-    var decision: String = "No wake attempts yet."
+    var decision: String = UserFacingText.noActivityYet
     var acceptedCount: Int = 0
     var rejectedCount: Int = 0
 }
@@ -462,7 +462,7 @@ struct TTSProgressSnapshot {
 }
 
 struct VoicePreflightSnapshot {
-    var microphoneStatus: String = "unknown"
+    var microphoneStatus: String = "not_determined"
     var backendAudioInputAvailable = false
     var ttsAvailable = false
     var guidance = "Microphone access has not been checked yet."
