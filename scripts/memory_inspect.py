@@ -15,7 +15,7 @@ from ollama_client import OllamaClient
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Inspect Lulu's canonical long-term memory in text mode."
+        description="Inspect Lulu's canonical long-term memory from the CLI."
     )
     parser.add_argument(
         "--query",

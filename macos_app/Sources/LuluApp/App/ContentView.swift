@@ -19,6 +19,11 @@ struct ContentView: View {
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
+
+            PDFAudiobooksView(model: model)
+                .tabItem {
+                    Label("PDF Audiobooks", systemImage: "book.closed")
+                }
         }
         .frame(minWidth: 960, minHeight: 700)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

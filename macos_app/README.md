@@ -1,6 +1,6 @@
 # Lulu macOS App Preview
 
-This directory contains the Stage 2 desktop-shell preview for Lulu VAIA.
+This directory contains the current desktop-shell preview for Lulu VAIA.
 
 ## Scope
 
@@ -19,15 +19,22 @@ The shell now also includes an early voice-mode preview surface:
 - preflight microphone authorization from the native shell before starting voice modes
 - refresh a full runtime diagnostics snapshot from the backend service for parity checks
 
+The shell also now includes an initial `PDF Audiobooks` utility surface:
+
+- choose a source PDF and export root from native macOS pickers
+- run backend-backed dry runs or full audiobook exports
+- poll job status and show manifest/output paths plus progress lines
+- keep PDF workflow state separate from the live assistant runtime UI
+
 The desktop launcher prefers `127.0.0.1:8765` for local development, but if that port is already occupied by an older helper process it will choose a free loopback port for the new session instead of failing bootstrap.
 
-Full microphone permission ownership, packaged app entitlements, PDF workflow UI, and signing remain later stages.
+Treat Stages 3 and 4 as complete for the current preview baseline. Full packaged-app entitlements, release signing, notarization, and distribution remain later stages.
 
 ## Structure
 
 - `Package.swift`: Swift Package manifest for source validation and Xcode opening
 - `Sources/LuluApp/App/`: app entrypoint, content layout, and shared app model
-- `Sources/LuluApp/Features/`: Assistant, Diagnostics, and Settings views
+- `Sources/LuluApp/Features/`: Assistant, Diagnostics, Settings, and PDF Audiobooks views
 - `Sources/LuluApp/Models/`: Swift API and event models
 - `Sources/LuluApp/Services/`: backend launch and HTTP/WebSocket integration
 
