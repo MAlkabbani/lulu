@@ -178,6 +178,38 @@ def test_pdf_job_reports_failure_for_image_only_pdf(tmp_path: Path) -> None:
     assert "OCR support is deferred" in payload["error"]
 
 
+def test_pdf_job_reports_failure_for_encrypted_pdf(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "locked.pdf"
+    output_dir = tmp_path / "exports"
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    writer.encrypt("secret")
+    with pdf_path.open("wb") as handle:
+        writer.write(handle)
+
+    app = build_service_app(
+        FakeController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
+    client = TestClient(app)
+    create = client.post(
+        "/v1/pdf-audiobook/jobs",
+        headers=auth_headers(),
+        json={
+            "pdf_path": str(pdf_path),
+            "output_dir": str(output_dir),
+            "dry_run": True,
+            "portable_format": "none",
+        },
+    )
+
+    assert create.status_code == 200
+    payload = wait_for_job(client, create.json()["job_id"])
+    assert payload["status"] == "failed"
+    assert "Encrypted PDFs are not supported" in payload["error"]
+
+
 def test_pdf_job_rejects_when_queue_is_full(tmp_path: Path) -> None:
     blocker = threading.Event()
 

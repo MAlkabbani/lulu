@@ -46,6 +46,7 @@ Type-check the shell from this directory:
 swiftc -typecheck Sources/LuluApp/App/*.swift \
   Sources/LuluApp/Features/Assistant/*.swift \
   Sources/LuluApp/Features/Diagnostics/*.swift \
+  Sources/LuluApp/Features/PDFAudiobooks/*.swift \
   Sources/LuluApp/Features/Settings/*.swift \
   Sources/LuluApp/Models/*.swift \
   Sources/LuluApp/Services/*.swift
