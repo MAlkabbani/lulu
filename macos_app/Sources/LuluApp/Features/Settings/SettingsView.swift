@@ -5,6 +5,14 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Launch Mode") {
+                InlineNotice(model.launchModeNotice, tone: .info, systemImage: "shippingbox.fill")
+                LabeledValueRow(label: "Current Mode", value: model.launchModeLabel)
+                ForEach(Array(model.launchModeChecklistItems.enumerated()), id: \.offset) { _, item in
+                    ChecklistRow(item: item)
+                }
+            }
+
             Section("Models") {
                 LabeledTextFieldRow(
                     label: "Chat Model",
@@ -35,6 +43,8 @@ struct SettingsView: View {
                     text: $model.settingsDraft.wakePhrase
                 )
                 Toggle("Practical Voice Mode", isOn: $model.settingsDraft.practicalVoiceMode)
+                    .accessibilityLabel("Practical Voice Mode")
+                    .accessibilityHint("Enable more forgiving wake and conversation defaults for everyday use.")
             }
 
             Section("Storage") {
@@ -52,6 +62,8 @@ struct SettingsView: View {
                     }
                 }
                 .help("Save settings to Lulu's local configuration file.")
+                .accessibilityLabel("Save Settings")
+                .accessibilityHint("Write the current Lulu settings to the local configuration file.")
                 if !model.settingsSaveMessage.isEmpty {
                     InlineNotice(model.settingsSaveMessage, tone: .info)
                 }

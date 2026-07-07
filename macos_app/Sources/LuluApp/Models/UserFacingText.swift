@@ -97,4 +97,8 @@ enum UserFacingText {
     static func booleanStatusLabel(_ value: Bool) -> String {
         value ? "Ready" : "Needs Attention"
     }
+
+    static func launchModeLabel(_ pathMode: String?) -> String {
+        pathMode == "app_support" ? "Packaged App Mode" : "Preview Checkout Mode"
+    }
 }

@@ -107,6 +107,8 @@ struct PDFAudiobooksView: View {
                             Text("Automatic").tag("auto")
                             Text("None").tag("none")
                         }
+                        .accessibilityLabel("Chapter Splitting")
+                        .accessibilityHint("Choose whether Lulu automatically splits chapters.")
 
                         Picker("Portable Format", selection: $model.pdfDraft.portableFormat) {
                             Text("None").tag("none")
@@ -115,6 +117,8 @@ struct PDFAudiobooksView: View {
                             Text("MP3").tag("mp3")
                         }
                         .help("Choose None to keep AIFF-only output. WAV, M4A, and MP3 require ffmpeg.")
+                        .accessibilityLabel("Portable Format")
+                        .accessibilityHint("Choose an optional export format for portable audio copies.")
                         if model.dependencyHealth?.ffmpegAvailable == false {
                             InlineNotice(
                                 "Portable WAV, M4A, and MP3 export requires ffmpeg in PATH. AIFF export still works.",
@@ -124,10 +128,14 @@ struct PDFAudiobooksView: View {
 
                         Toggle("Dry Run Only", isOn: $model.pdfDraft.dryRun)
                             .help("Validate extraction and sectioning without rendering audio.")
+                            .accessibilityLabel("Dry Run Only")
+                            .accessibilityHint("Validate extraction and sectioning without rendering audio.")
 
                         Stepper(value: $model.pdfDraft.previewChars, in: 100...4000, step: 100) {
                             Text("Preview Characters: \(model.pdfDraft.previewChars)")
                         }
+                        .accessibilityLabel("Preview Characters")
+                        .accessibilityHint("Adjust how many preview characters the dry run returns.")
 
                         LabeledTextFieldRow(
                             label: "Pronunciation File",
@@ -263,6 +271,8 @@ struct PDFAudiobooksView: View {
         .buttonStyle(.borderedProminent)
         .disabled(model.pdfSubmissionBlockedReason != nil)
         .help(model.pdfSubmissionBlockedReason ?? "Start the current PDF workflow.")
+        .accessibilityLabel(model.pdfDraft.dryRun ? "Run Dry Run" : "Export Audiobook")
+        .accessibilityHint(model.pdfSubmissionBlockedReason ?? "Start the current PDF workflow.")
 
         Button("Refresh Job Status") {
             Task { await model.refreshPDFJobStatus() }
@@ -270,6 +280,8 @@ struct PDFAudiobooksView: View {
         .buttonStyle(.bordered)
         .disabled(model.pdfStatusRefreshBlockedReason != nil)
         .help(model.pdfStatusRefreshBlockedReason ?? "Refresh the current job status.")
+        .accessibilityLabel("Refresh Job Status")
+        .accessibilityHint(model.pdfStatusRefreshBlockedReason ?? "Refresh the current PDF job status.")
 
         Button("Clear Job") {
             model.resetPDFWorkflow()
@@ -277,6 +289,8 @@ struct PDFAudiobooksView: View {
         .buttonStyle(.bordered)
         .disabled(model.pdfJob == nil && model.pdfStatusMessage.isEmpty)
         .help("Clear the current PDF workflow state.")
+        .accessibilityLabel("Clear PDF Job")
+        .accessibilityHint("Clear the current PDF workflow state from the desktop app.")
     }
 
     private func chooseFile(allowedContentTypes: [UTType]) -> String? {

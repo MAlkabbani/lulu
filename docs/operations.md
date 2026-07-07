@@ -223,6 +223,7 @@ Packaged-mode readiness now uses the same trust boundary, but changes where stat
 - preview mode keeps repo-local config, logs, exports, and Chroma storage under the checkout
 - packaged mode uses `LULU_PATH_MODE=app_support` plus `LULU_APP_SUPPORT_DIR` so runtime state moves under the app-support root
 - packaged mode must preserve the same nonce-validated startup handshake and header-only bearer auth used by preview mode
+- the desktop Settings view should surface those launch-mode expectations clearly during first-run onboarding instead of assuming repo knowledge
 
 ### Current limitation
 

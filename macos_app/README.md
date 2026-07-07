@@ -38,6 +38,7 @@ Treat Stages 3 and 4 as complete for the current preview baseline. Stage 5 packa
 - both launch modes must preserve the same nonce-validated startup contract and header-only bearer auth
 - full packaged-app entitlements, release signing, notarization, and distribution still remain later release-stage work
 - clean-machine packaged installs must still handle optional PDF portable-export dependencies such as `ffmpeg`; the current repo-local installer already automates that dependency for checkout-based installs
+- the desktop Settings view now surfaces launch-mode guidance so first-run expectations stay explicit while packaged onboarding is still being completed
 
 ### Packaging Status
 

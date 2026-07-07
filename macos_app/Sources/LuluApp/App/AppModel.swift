@@ -606,6 +606,52 @@ final class AppModel: ObservableObject {
         pdfJob == nil ? "No PDF job is available yet." : nil
     }
 
+    var launchModeLabel: String {
+        UserFacingText.launchModeLabel(settings?.pathMode)
+    }
+
+    var launchModeNotice: String {
+        if settings?.pathMode == "app_support" {
+            return "Packaged mode stores Lulu state under App Support and should guide first-run setup without assuming a repo checkout."
+        }
+        return "Preview mode still expects a repo checkout and a repo-local virtual environment. Packaged mode is a separate future bootstrap path."
+    }
+
+    var launchModeChecklistItems: [ChecklistItem] {
+        if settings?.pathMode == "app_support" {
+            return [
+                ChecklistItem(
+                    title: "App Support State",
+                    status: "Ready",
+                    detail: "Runtime state should resolve under the app-support root instead of the repo checkout.",
+                    tone: .success
+                ),
+                ChecklistItem(
+                    title: "Optional PDF Export Dependencies",
+                    status: dependencyHealth?.ffmpegAvailable == true ? "Ready" : "Optional",
+                    detail: dependencyHealth?.ffmpegAvailable == true
+                        ? "Portable PDF export is ready in packaged mode."
+                        : "Portable PDF export still needs ffmpeg. AIFF export remains available without it.",
+                    tone: dependencyHealth?.ffmpegAvailable == true ? .success : .warning
+                ),
+            ]
+        }
+        return [
+            ChecklistItem(
+                title: "Repo Checkout",
+                status: "Required",
+                detail: "Preview mode still relies on the checked-out source tree and repo-local configuration paths.",
+                tone: .warning
+            ),
+            ChecklistItem(
+                title: "Local Virtual Environment",
+                status: "Required",
+                detail: "The desktop preview still expects the repo-local .venv for backend startup.",
+                tone: .warning
+            ),
+        ]
+    }
+
     var setupChecklistItems: [ChecklistItem] {
         [
             ChecklistItem(

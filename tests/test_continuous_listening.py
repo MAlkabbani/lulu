@@ -330,6 +330,14 @@ def test_terminal_ui_response_placeholder_mentions_assistant_reply() -> None:
     assert ui._render_response().plain == "No assistant reply yet."
 
 
+def test_terminal_ui_invocation_badge_uses_human_readable_answer_only_label() -> None:
+    ui = TerminalUI(build_settings())
+
+    ui.set_invocation("chat_only", "Normal chat reply; no backend action requested.")
+
+    assert ui._invocation_badge().plain == "ANSWER ONLY"
+
+
 def test_terminal_ui_records_recent_wake_attempts() -> None:
     ui = TerminalUI(build_settings())
 

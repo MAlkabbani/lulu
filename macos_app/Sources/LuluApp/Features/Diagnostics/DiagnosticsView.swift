@@ -10,6 +10,10 @@ struct DiagnosticsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 GroupBox("Overview") {
                     VStack(alignment: .leading, spacing: 8) {
+                        InlineNotice(
+                            "Use Overview for quick health checks. Expand the advanced wake metrics and filter the event views when you need deeper troubleshooting.",
+                            tone: .info
+                        )
                         LabeledValueRow(
                             label: "Backend",
                             value: model.backendHealthy ? UserFacingText.backendReady : UserFacingText.backendUnavailable
@@ -196,6 +200,11 @@ struct DiagnosticsView: View {
                             Text("Actions").tag("Actions")
                         }
                         .pickerStyle(.segmented)
+                        .accessibilityLabel("Event Filter")
+                        .accessibilityHint("Filter diagnostics events by all activity, warnings, or actions.")
+                        Text("Filter runtime and event-log entries to focus on warnings or action flow when troubleshooting.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
                         if filteredRuntimeEvents.isEmpty {
                             EmptyStateView(text: "No activity yet.")

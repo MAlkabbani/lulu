@@ -183,18 +183,24 @@ struct AssistantView: View {
             }
             .disabled(model.voiceStartBlockedReason != nil)
             .help(model.voiceStartBlockedReason ?? "Start continuous listening.")
+            .accessibilityLabel("Start Continuous Voice")
+            .accessibilityHint(model.voiceStartBlockedReason ?? "Start continuous voice listening.")
 
             Button("Turn-Based Voice") {
                 Task { await model.startTurnBasedVoiceMode() }
             }
             .disabled(model.voiceStartBlockedReason != nil)
             .help(model.voiceStartBlockedReason ?? "Start one-turn voice capture.")
+            .accessibilityLabel("Start Turn-Based Voice")
+            .accessibilityHint(model.voiceStartBlockedReason ?? "Start one turn of voice capture.")
 
             Button("Stop Runtime") {
                 Task { await model.stopRuntime() }
             }
             .disabled(model.stopRuntimeBlockedReason != nil)
             .help(model.stopRuntimeBlockedReason ?? "Stop the current voice runtime.")
+            .accessibilityLabel("Stop Voice Runtime")
+            .accessibilityHint(model.stopRuntimeBlockedReason ?? "Stop the active voice runtime.")
         }
     }
 
@@ -221,12 +227,16 @@ struct AssistantView: View {
                 Task { await model.requestMicrophoneAccess() }
             }
             .help("Prompt for microphone permission if macOS has not asked yet.")
+            .accessibilityLabel("Request Microphone Access")
+            .accessibilityHint("Ask macOS for microphone permission.")
 
             Button("Open Privacy Settings") {
                 model.openPrivacySettings()
             }
             .help("Open the macOS Microphone privacy settings.")
             .buttonStyle(.bordered)
+            .accessibilityLabel("Open Privacy Settings")
+            .accessibilityHint("Open macOS Privacy settings for microphone access.")
         }
     }
 
