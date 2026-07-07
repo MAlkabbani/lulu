@@ -13,6 +13,7 @@ This directory is the public documentation surface for Lulu VAIA.
 - [Codebase Audit 2026-07-06](./codebase-audit-2026-07-06.md)
 - [Licensing Options](./licensing-options.md)
 - [Desktop App Implementation Spec](./implementation-plans/macos-desktop-app-implementation-spec.md)
+- [Stage 5 UI And UX Modernization Spec](./implementation-plans/stage5-ui-ux-modernization-spec.md)
 - [Roadmap](../ROADMAP.md)
 - [Original Project Blueprint](../Project_Blueprint_AI_Assistant.md)
 
@@ -26,6 +27,7 @@ This directory is the public documentation surface for Lulu VAIA.
 - `wake-performance-report.md`: benchmark framing and wake-system results
 - `codebase-audit-2026-07-06.md`: consolidated security, quality, and remediation findings from the July 2026 audit
 - `licensing-options.md`: plain-language tradeoffs for choosing an open-source license
+- `implementation-plans/stage5-ui-ux-modernization-spec.md`: staged UI, UX, wording, and accessibility modernization plan for Stage 5
 - `implementation-plans/`: scoped future implementation plans and engineering specs
 
 ## Contributor Shortcuts
