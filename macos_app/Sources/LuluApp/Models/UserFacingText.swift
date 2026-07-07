@@ -93,4 +93,8 @@ enum UserFacingText {
     static func pdfWorkflowModeLabel(dryRun: Bool) -> String {
         dryRun ? "Dry Run" : "Export"
     }
+
+    static func booleanStatusLabel(_ value: Bool) -> String {
+        value ? "Ready" : "Needs Attention"
+    }
 }

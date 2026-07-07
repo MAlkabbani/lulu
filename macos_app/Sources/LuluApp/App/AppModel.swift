@@ -605,4 +605,91 @@ final class AppModel: ObservableObject {
     var pdfStatusRefreshBlockedReason: String? {
         pdfJob == nil ? "No PDF job is available yet." : nil
     }
+
+    var setupChecklistItems: [ChecklistItem] {
+        [
+            ChecklistItem(
+                title: "Local Backend",
+                status: UserFacingText.booleanStatusLabel(backendHealthy),
+                detail: backendHealthy
+                    ? "The desktop app can talk to Lulu's local backend service."
+                    : "Start or recover the local backend before using voice or PDF features.",
+                tone: backendHealthy ? .success : .warning
+            ),
+            ChecklistItem(
+                title: "Microphone Access",
+                status: UserFacingText.microphoneStatusLabel(voicePreflight.microphoneStatus),
+                detail: voicePreflight.guidance,
+                tone: voicePreflight.microphoneStatus == "authorized" ? .success :
+                    (voicePreflight.microphoneStatus == "denied" || voicePreflight.microphoneStatus == "restricted" ? .danger : .warning)
+            ),
+            ChecklistItem(
+                title: "Audio Input",
+                status: UserFacingText.availabilityLabel(voicePreflight.backendAudioInputAvailable),
+                detail: voicePreflight.backendAudioInputAvailable
+                    ? "Audio input is ready for voice capture."
+                    : "Audio input is unavailable, so voice capture cannot start yet.",
+                tone: voicePreflight.backendAudioInputAvailable ? .success : .danger
+            ),
+            ChecklistItem(
+                title: "Text-to-Speech",
+                status: UserFacingText.availabilityLabel(voicePreflight.ttsAvailable),
+                detail: voicePreflight.ttsAvailable
+                    ? "Lulu can speak responses aloud."
+                    : "Text-to-speech is unavailable, so spoken responses cannot play yet.",
+                tone: voicePreflight.ttsAvailable ? .success : .danger
+            ),
+            ChecklistItem(
+                title: "Portable PDF Export",
+                status: dependencyHealth?.ffmpegAvailable == true ? "Ready" : "Optional",
+                detail: dependencyHealth?.ffmpegAvailable == true
+                    ? "Portable WAV, M4A, and MP3 export is available."
+                    : "AIFF export still works. Install ffmpeg only if you need WAV, M4A, or MP3 copies.",
+                tone: dependencyHealth?.ffmpegAvailable == true ? .success : .warning
+            ),
+        ]
+    }
+
+    var canRevealPDFOutput: Bool {
+        let outputDir = pdfJob?.outputDir?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !outputDir.isEmpty
+    }
+
+    var canCopyPDFManifestPath: Bool {
+        let manifestPath = pdfJob?.manifestPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !manifestPath.isEmpty
+    }
+
+    func revealPDFOutputInFinder() {
+        guard let outputDir = pdfJob?.outputDir, !outputDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            pdfStatusMessage = "No output folder is available yet."
+            return
+        }
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: outputDir)
+        appendEvent("Revealed PDF output folder in Finder.")
+    }
+
+    func copyPDFManifestPath() {
+        guard let manifestPath = pdfJob?.manifestPath, !manifestPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            pdfStatusMessage = "No manifest path is available yet."
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(manifestPath, forType: .string)
+        pdfStatusMessage = "Copied manifest path."
+        appendEvent("Copied PDF manifest path to the clipboard.")
+    }
+
+    func copyPDFOutputFolderPath() {
+        guard let outputDir = pdfJob?.outputDir, !outputDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            pdfStatusMessage = "No output folder is available yet."
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(outputDir, forType: .string)
+        pdfStatusMessage = "Copied output folder path."
+        appendEvent("Copied PDF output folder path to the clipboard.")
+    }
 }

@@ -82,6 +82,16 @@ struct AssistantView: View {
                     }
                 }
 
+                GroupBox("Setup Checklist") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Use this checklist to verify the app is ready before you start a voice session or PDF export.")
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(model.setupChecklistItems.enumerated()), id: \.offset) { _, item in
+                            ChecklistRow(item: item)
+                        }
+                    }
+                }
+
                 GroupBox("Transcript") {
                     ScrollView {
                         if model.transcript.isEmpty {

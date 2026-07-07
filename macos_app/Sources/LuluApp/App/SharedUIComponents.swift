@@ -127,3 +127,31 @@ struct LabeledTextFieldRow: View {
         }
     }
 }
+
+struct ChecklistItem {
+    let title: String
+    let status: String
+    let detail: String
+    let tone: StatusTone
+}
+
+struct ChecklistRow: View {
+    let item: ChecklistItem
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            StatusBadge(text: item.status, tone: item.tone)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .fontWeight(.semibold)
+                Text(item.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.title). \(item.status). \(item.detail)")
+    }
+}

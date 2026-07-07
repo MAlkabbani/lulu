@@ -143,6 +143,7 @@ Current preview scope:
 - launches the local Python backend service
 - renders transcript, streamed response, diagnostics, and settings for voice runtimes
 - supports native microphone preflight plus continuous and turn-based voice controls
+- adds a first-run setup checklist for backend, microphone, audio, TTS, and optional PDF-export readiness
 - includes a separate desktop `PDF Audiobooks` utility surface backed by the local PDF job APIs
 - keeps the current Python backend as the source of truth
 

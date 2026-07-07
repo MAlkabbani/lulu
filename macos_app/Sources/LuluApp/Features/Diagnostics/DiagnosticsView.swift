@@ -2,6 +2,8 @@ import SwiftUI
 
 struct DiagnosticsView: View {
     @ObservedObject var model: AppModel
+    @State private var showAdvancedWakeMetrics = false
+    @State private var eventFilter = "All"
 
     var body: some View {
         ScrollView {
@@ -108,12 +110,20 @@ struct DiagnosticsView: View {
                             label: "Accepted / Rejected",
                             value: "\(model.wakeAttempt.acceptedCount) / \(model.wakeAttempt.rejectedCount)"
                         )
-                        LabeledValueRow(label: "Confidence", value: formatted(model.wakeSignal.confidence))
-                        LabeledValueRow(label: "Threshold", value: formatted(model.wakeSignal.threshold))
-                        LabeledValueRow(label: "Acoustic Score", value: formatted(model.wakeSignal.acousticScore))
-                        LabeledValueRow(label: "DTW Score", value: formatted(model.wakeSignal.dtwScore))
-                        LabeledValueRow(label: "Signal-to-Noise Ratio", value: formatted(model.wakeSignal.snrDB))
-                        LabeledValueRow(label: "Feature Frames", value: "\(model.wakeSignal.featureFrames)")
+                        DisclosureGroup("Advanced Wake Metrics", isExpanded: $showAdvancedWakeMetrics) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("These metrics help debug wake quality and audio conditions.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LabeledValueRow(label: "Confidence", value: formatted(model.wakeSignal.confidence))
+                                LabeledValueRow(label: "Threshold", value: formatted(model.wakeSignal.threshold))
+                                LabeledValueRow(label: "Acoustic Score", value: formatted(model.wakeSignal.acousticScore))
+                                LabeledValueRow(label: "DTW Score", value: formatted(model.wakeSignal.dtwScore))
+                                LabeledValueRow(label: "Signal-to-Noise Ratio", value: formatted(model.wakeSignal.snrDB))
+                                LabeledValueRow(label: "Feature Frames", value: "\(model.wakeSignal.featureFrames)")
+                            }
+                            .padding(.top, 4)
+                        }
                     }
                 }
 
@@ -180,10 +190,17 @@ struct DiagnosticsView: View {
 
                 GroupBox("Recent Runtime Events") {
                     VStack(alignment: .leading, spacing: 8) {
-                        if model.recentRuntimeEvents.isEmpty {
+                        Picker("Event Filter", selection: $eventFilter) {
+                            Text("All").tag("All")
+                            Text("Warnings").tag("Warnings")
+                            Text("Actions").tag("Actions")
+                        }
+                        .pickerStyle(.segmented)
+
+                        if filteredRuntimeEvents.isEmpty {
                             EmptyStateView(text: "No activity yet.")
                         } else {
-                            ForEach(model.recentRuntimeEvents, id: \.self) { event in
+                            ForEach(filteredRuntimeEvents, id: \.self) { event in
                                 Text(event)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -194,10 +211,10 @@ struct DiagnosticsView: View {
                 GroupBox("Event Log") {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 6) {
-                            if model.eventLog.isEmpty {
+                            if filteredEventLog.isEmpty {
                                 EmptyStateView(text: "No activity yet.")
                             } else {
-                                ForEach(Array(model.eventLog.enumerated()), id: \.offset) { _, line in
+                                ForEach(Array(filteredEventLog.enumerated()), id: \.offset) { _, line in
                                     Text(line)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .font(.system(.body, design: .monospaced))
@@ -236,5 +253,30 @@ struct DiagnosticsView: View {
             return UserFacingText.noDataYet
         }
         return String(format: "%.2f", value)
+    }
+
+    private var filteredRuntimeEvents: [String] {
+        filterEvents(model.recentRuntimeEvents)
+    }
+
+    private var filteredEventLog: [String] {
+        filterEvents(model.eventLog)
+    }
+
+    private func filterEvents(_ events: [String]) -> [String] {
+        switch eventFilter {
+        case "Warnings":
+            return events.filter { event in
+                let lower = event.lowercased()
+                return lower.contains("failed") || lower.contains("error") || lower.contains("blocked")
+            }
+        case "Actions":
+            return events.filter { event in
+                let lower = event.lowercased()
+                return lower.contains("action") || lower.contains("saved") || lower.contains("memory")
+            }
+        default:
+            return events
+        }
     }
 }

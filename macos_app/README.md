@@ -14,8 +14,10 @@ The current shell is intentionally thin and voice-first:
 The shell now also includes an early voice-mode preview surface:
 
 - start continuous voice and turn-based voice runtime modes
+- show a setup checklist for backend, microphone, audio-input, TTS, and optional PDF-export readiness
 - display wake guidance, wake score, cooldown, and conversation-window badges
 - map wake, latency, memory, and TTS runtime events into native diagnostics panels
+- keep advanced wake metrics available behind progressive disclosure and filter runtime/event views
 - preflight microphone authorization from the native shell before starting voice modes
 - refresh a full runtime diagnostics snapshot from the backend service for parity checks
 
@@ -24,6 +26,7 @@ The shell also now includes an initial `PDF Audiobooks` utility surface:
 - choose a source PDF and export root from native macOS pickers
 - run backend-backed dry runs or full audiobook exports
 - poll job status and show manifest/output paths plus progress lines
+- reveal the output folder in Finder and copy output or manifest paths after a job completes
 - keep PDF workflow state separate from the live assistant runtime UI
 
 The desktop launcher now starts the backend helper on port `0`, waits for a nonce-validated startup record from the child process, and only then trusts the negotiated loopback port for authenticated HTTP and WebSocket traffic.

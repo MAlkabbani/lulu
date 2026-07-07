@@ -194,6 +194,28 @@ struct PDFAudiobooksView: View {
                                 label: "Error",
                                 value: UserFacingText.textOrFallback(job.error)
                             )
+                            HStack(spacing: 10) {
+                                Button("Reveal Output Folder") {
+                                    model.revealPDFOutputInFinder()
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!model.canRevealPDFOutput)
+                                .help(model.canRevealPDFOutput ? "Open the current output folder in Finder." : "No output folder is available yet.")
+
+                                Button("Copy Output Folder Path") {
+                                    model.copyPDFOutputFolderPath()
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!model.canRevealPDFOutput)
+                                .help(model.canRevealPDFOutput ? "Copy the current output folder path." : "No output folder is available yet.")
+
+                                Button("Copy Manifest Path") {
+                                    model.copyPDFManifestPath()
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!model.canCopyPDFManifestPath)
+                                .help(model.canCopyPDFManifestPath ? "Copy the current manifest path." : "No manifest path is available yet.")
+                            }
                         } else {
                             EmptyStateView(text: UserFacingText.noActivityYet)
                         }

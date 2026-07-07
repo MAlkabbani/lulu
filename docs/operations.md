@@ -189,9 +189,9 @@ The service emits versioned JSON envelopes carrying runtime events such as trans
 
 ### Scope
 
-The current desktop preview lives in `macos_app/` and now covers the completed Stage 3 voice-mode shell plus the completed Stage 4 PDF utility surface: voice runtime controls, wake-aware diagnostics, transcript and streamed response rendering, backend-owned settings and health state, and a separate desktop `PDF Audiobooks` workflow. It is not yet the packaged end-user `.app`.
+The current desktop preview lives in `macos_app/` and now covers the completed Stage 3 voice-mode shell plus the completed Stage 4 PDF utility surface: voice runtime controls, a setup checklist for first-run readiness, wake-aware diagnostics, transcript and streamed response rendering, backend-owned settings and health state, and a separate desktop `PDF Audiobooks` workflow. It is not yet the packaged end-user `.app`.
 
-The preview shell now also includes a separate desktop `PDF Audiobooks` utility surface built on top of the existing backend PDF job endpoints.
+The preview shell now also includes a separate desktop `PDF Audiobooks` utility surface built on top of the existing backend PDF job endpoints, with post-run Finder and clipboard actions for the generated output.
 
 ### Validate the SwiftUI shell source
 

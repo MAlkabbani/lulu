@@ -316,6 +316,20 @@ def test_terminal_ui_runtime_badge_reflects_turn_based_mode() -> None:
     assert ui._runtime_badge().plain == "TURN-BASED"
 
 
+def test_terminal_ui_mode_badge_uses_human_readable_label() -> None:
+    ui = TerminalUI(build_settings())
+
+    ui.set_mode("passive_listening")
+
+    assert ui._mode_badge().plain == "LISTENING FOR WAKE PHRASE"
+
+
+def test_terminal_ui_response_placeholder_mentions_assistant_reply() -> None:
+    ui = TerminalUI(build_settings())
+
+    assert ui._render_response().plain == "No assistant reply yet."
+
+
 def test_terminal_ui_records_recent_wake_attempts() -> None:
     ui = TerminalUI(build_settings())
 
