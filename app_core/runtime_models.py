@@ -12,6 +12,7 @@ class DependencyHealth:
     embedding_model_available: bool = False
     audio_input_available: bool = True
     tts_available: bool = True
+    ffmpeg_available: bool = True
     memory_path_available: bool = True
     issues: list[str] = field(default_factory=list)
 
@@ -33,4 +34,3 @@ class RuntimeEvent:
 
 def make_event(event_type: str, **payload: Any) -> RuntimeEvent:
     return RuntimeEvent(event_type=event_type, payload=payload)
-

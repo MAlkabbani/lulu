@@ -77,6 +77,16 @@ def _render_timeout_seconds_for_text_path(text_path: Path) -> int:
     return max(base_timeout, estimated_seconds)
 
 
+def require_portable_conversion_dependency(portable_format: str) -> None:
+    if portable_format == "none":
+        return
+    if shutil.which("ffmpeg") is None:
+        raise AudiobookRenderError(
+            "Portable audio conversion requires ffmpeg, but it was not found in PATH. "
+            "Choose AIFF-only export or install ffmpeg first."
+        )
+
+
 class PDFToAudiobookError(RuntimeError):
     """Base class for operator-facing audiobook workflow errors."""
 
@@ -330,6 +340,8 @@ def build_audiobook_from_args(
     pronunciation_file = (
         Path(args.pronunciation_file).expanduser() if args.pronunciation_file else None
     )
+    if not args.dry_run:
+        require_portable_conversion_dependency(args.portable_format)
 
     progress(f"Validating {input_pdf}")
     metadata_from_pdf, extraction = extract_pdf_text(input_pdf)

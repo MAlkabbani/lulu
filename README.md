@@ -77,6 +77,8 @@ Helpful variants:
 ./scripts/start_lulu.sh --mode turn-based
 ```
 
+The repo-local installer already automates `ffmpeg` installation through Homebrew, so portable PDF export support is provisioned during `./scripts/install_lulu.sh` rather than being left as a later manual step. The startup wrapper now also preflights `ffmpeg` and warns before runtime start if portable PDF exports would be unavailable.
+
 Offline PDF-to-audiobook preview:
 
 ```bash
@@ -146,7 +148,7 @@ Current preview scope:
 
 Current next step:
 
-- Stage 5 packages and hardens the desktop app for signed, notarized distribution
+- Stage 5 packages and hardens the desktop app for signed, notarized distribution, including clean-machine handling for optional PDF portable-export dependencies such as `ffmpeg`
 
 See [macos_app/README.md](./macos_app/README.md) for the preview structure and local validation notes.
 

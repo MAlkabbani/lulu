@@ -28,7 +28,7 @@ The shell also now includes an initial `PDF Audiobooks` utility surface:
 
 The desktop launcher prefers `127.0.0.1:8765` for local development, but if that port is already occupied by an older helper process it will choose a free loopback port for the new session instead of failing bootstrap.
 
-Treat Stages 3 and 4 as complete for the current preview baseline. Full packaged-app entitlements, release signing, notarization, and distribution remain later stages.
+Treat Stages 3 and 4 as complete for the current preview baseline. Full packaged-app entitlements, release signing, notarization, and distribution remain later stages. That later packaging stage must also handle clean-machine provisioning or first-launch remediation for optional PDF portable-export dependencies such as `ffmpeg`; the current repo-local installer already automates that dependency for checkout-based installs.
 
 ## Structure
 

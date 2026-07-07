@@ -26,6 +26,7 @@ from pdf_audiobook import (
     main,
     play_export_directory,
     render_section_audio,
+    require_portable_conversion_dependency,
     split_into_sections,
     update_manifest_audio_outputs,
     validate_input_pdf,
@@ -339,6 +340,13 @@ def test_convert_audio_outputs_requires_ffmpeg(monkeypatch, tmp_path: Path) -> N
         convert_audio_outputs([audio_path], portable_format="wav", progress=lambda _: None)
 
 
+def test_require_portable_conversion_dependency_rejects_missing_ffmpeg(monkeypatch) -> None:
+    monkeypatch.setattr("pdf_audiobook.shutil.which", lambda _: None)
+
+    with pytest.raises(Exception, match="requires ffmpeg"):
+        require_portable_conversion_dependency("m4a")
+
+
 def test_convert_audio_outputs_invokes_ffmpeg(monkeypatch, tmp_path: Path) -> None:
     audio_path = tmp_path / "chapter.aiff"
     audio_path.write_text("fake audio", encoding="utf-8")
@@ -409,6 +417,47 @@ def test_render_timeout_seconds_keeps_env_floor_for_short_text(monkeypatch, tmp_
     timeout = _render_timeout_seconds_for_text_path(text_path)
 
     assert timeout == 90
+
+
+def test_build_audiobook_from_args_rejects_portable_export_before_render_without_ffmpeg(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    pdf_path = tmp_path / "sample.pdf"
+    write_text_pdf(
+        pdf_path,
+        ["Chapter 1\nHello world from Lulu."],
+        metadata={"Title": "Local PDF Book", "Author": "Lulu Tester"},
+    )
+    args = Namespace(
+        input_pdf=str(pdf_path),
+        title=None,
+        author=None,
+        genre=None,
+        output_dir=str(tmp_path / "exports"),
+        chapter_splitting="auto",
+        dry_run=False,
+        portable_format="m4a",
+        preview_chars=120,
+        pronunciation_file=None,
+    )
+    render_called = False
+
+    def fake_render(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal render_called
+        render_called = True
+        return []
+
+    monkeypatch.setattr(
+        "pdf_audiobook.shutil.which",
+        lambda name: None if name == "ffmpeg" else "/usr/bin/say",
+    )
+    monkeypatch.setattr("pdf_audiobook.render_section_audio", fake_render)
+
+    with pytest.raises(Exception, match="requires ffmpeg"):
+        build_audiobook_from_args(args, progress=lambda _: None)
+
+    assert render_called is False
 
 
 def test_convert_audio_outputs_reports_timeout(monkeypatch, tmp_path: Path) -> None:

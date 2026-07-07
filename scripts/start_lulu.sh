@@ -167,6 +167,18 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+check_optional_dependencies() {
+  if command -v ffmpeg >/dev/null 2>&1; then
+    log "INFO" "ffmpeg is available. Portable PDF exports are enabled."
+    return 0
+  fi
+
+  log "WARN" \
+    "ffmpeg is not in PATH. Voice runtime can still start, but portable PDF exports " \
+    "(wav/m4a/mp3) will stay unavailable until ffmpeg is installed. Run " \
+    "./scripts/install_lulu.sh or brew install ffmpeg."
+}
+
 wait_for_ollama() {
   local timeout_seconds="${1:-30}"
   local elapsed=0
@@ -239,6 +251,7 @@ require_command ollama
 [[ -d "${VENV_DIR}" ]] || die "Virtual environment is missing. Run ./scripts/install_lulu.sh first."
 [[ -x "${VENV_DIR}/bin/python" ]] || die "Python interpreter missing inside ${VENV_DIR}."
 
+check_optional_dependencies
 ensure_ollama
 ensure_models
 
