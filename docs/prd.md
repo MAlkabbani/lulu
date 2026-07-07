@@ -52,7 +52,7 @@ Existing alternatives commonly fail one or more of these requirements by dependi
 - Human-like premium voice quality in the current release.
 - Barge-in or interruptible playback in the current release.
 - Multi-user identity, account management, or cloud sync.
-- Rich GUI or mobile clients.
+- Polished multi-platform GUI clients or mobile apps beyond the current thin macOS preview shell.
 - General-purpose multi-agent orchestration beyond the single memory tool path.
 
 ## 4. Users And Personas
@@ -82,13 +82,15 @@ A developer or maintainer who needs to observe, tune, and extend the assistant's
 - Terminal dashboard with status, latencies, memory events, and wake diagnostics
 - Turn-based fallback mode for troubleshooting
 - Read-only memory inspection utility
+- Thin macOS desktop preview shell for voice controls, diagnostics, settings, and PDF audiobook workflows
 
 ### 5.2 Out Of Scope For The Current Product Baseline
 
 - Cloud-hosted inference or storage
 - Speaker diarization or multi-user profiles
 - Voice interruption while Lulu is speaking
-- Visual UI beyond the terminal dashboard
+- Polished end-user GUI work beyond the current macOS preview shell
+- Cross-platform or mobile client work
 - Automatic conflict resolution with human approval workflows
 - Structured calendar, email, or external SaaS integrations
 

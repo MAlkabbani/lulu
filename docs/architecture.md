@@ -32,7 +32,7 @@ Microphone
   -> TerminalUI
      -> live operator feedback and diagnostics
   -> backend_service
-     -> local HTTP + WebSocket boundary for future desktop clients
+     -> local HTTP + WebSocket boundary for the current macOS shell and future local clients
 ```
 
 ## Module Map
@@ -60,7 +60,7 @@ Microphone
 - `ffmpeg`: optional local post-processing for portable audiobook copies
 - `sounddevice`: microphone input
 - `rich`: terminal observability layer
-- `fastapi` + `uvicorn`: local backend service boundary for future GUI clients
+- `fastapi` + `uvicorn`: local backend service boundary for the current macOS desktop shell and future local clients
 - macOS `say`: built-in text-to-speech
 
 ## Quality Standards

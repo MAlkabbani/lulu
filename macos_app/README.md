@@ -36,6 +36,23 @@ Treat Stages 3 and 4 as complete for the current preview baseline. Stage 5 packa
 - full packaged-app entitlements, release signing, notarization, and distribution still remain later release-stage work
 - clean-machine packaged installs must still handle optional PDF portable-export dependencies such as `ffmpeg`; the current repo-local installer already automates that dependency for checkout-based installs
 
+### Packaging Status
+
+Implemented now:
+
+- repo-checkout preview mode
+- backend helper bootstrap with nonce-validated startup
+- packaged-mode path groundwork through app-support-backed runtime state
+- preserved header-only bearer auth and loopback trust boundary across launch modes
+
+Planned later:
+
+- signed app bundle production
+- packaged-app entitlements closeout
+- notarization
+- release packaging and distribution artifacts
+- clean-machine handling for optional packaged dependency workflows such as portable PDF export support
+
 ## Structure
 
 - `Package.swift`: Swift Package manifest for source validation and Xcode opening

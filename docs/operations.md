@@ -271,6 +271,8 @@ python3 scripts/pdf_to_audiobook.py /path/to/book.pdf \
   --portable-format wav
 ```
 
+These standalone CLI examples set `--output-dir` explicitly under `./outputs/audiobooks`. When you use the backend or desktop PDF job flow instead, omitting `output_dir` defaults the job to the configured trusted export root from `exports_path`.
+
 ### Supported inputs
 
 - local `.pdf` files only
@@ -399,6 +401,17 @@ rm -f .env .env.*
 
 This keeps the tracked source files while removing the local Python environment, persisted memory store, operational logs, runtime PID files, audiobook outputs, caches, and local environment overrides.
 
+### Remove packaged-mode runtime data
+
+If you are testing packaged-mode path handling, Lulu can also store runtime data outside the repo checkout:
+
+```bash
+rm -rf ~/Library/Application\ Support/Lulu
+rm -rf ~/Library/Caches/Lulu
+```
+
+This clears packaged-mode config, Chroma storage, logs, exports, and cache data without removing the repository checkout.
+
 ### Remove Lulu and its machine-wide dependencies
 
 Only use this path if the machine-wide tools below were installed specifically for Lulu and are not needed by other projects.
@@ -507,9 +520,9 @@ Provide a decrypted local copy first. The repo-default workflow does not try to 
 
 The file is likely scanned or image-only. OCR is not bundled into the current repo workflow.
 
-### PDF workflow reports an existing output directory
+### PDF workflow reuses a title from an earlier run
 
-Choose a different `--output-dir` or change `--title` so the book slug is unique.
+Reruns now create a new unique directory automatically when the same title already exists, such as `my-local-book-2`.
 
 ### PDF workflow reports missing `ffmpeg`
 

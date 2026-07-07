@@ -108,6 +108,8 @@ The fallback exists only if SwiftUI delivery stalls or native macOS staffing bec
 
 This is the target repo shape after the first desktop-foundation slices, not an immediate rewrite:
 
+Packaging-related paths in this example, including `Lulu.xcodeproj`, `Packaging/`, and the packaging scripts, are target-state artifacts and are not all present in the current repository.
+
 ```text
 .
 ├── app_core/
@@ -436,8 +438,8 @@ Example request:
 {
   "pdf_path": "/Users/example/Documents/book.pdf",
   "output_dir": "/Users/example/Documents/Lulu Exports",
-  "voice": "Samantha",
-  "format": "m4a",
+  "title": "My Local Book",
+  "portable_format": "m4a",
   "dry_run": false
 }
 ```
@@ -701,7 +703,7 @@ Work:
 
 Must preserve:
 
-- current `text`, `turn-based`, and `voice` mode semantics
+- current `turn-based` and `voice` mode semantics
 - current wake flow
 - current shutdown behavior
 
@@ -935,7 +937,7 @@ Phase 0 is complete only if all of the following are true:
 2. new runtime-controller tests pass
 3. new backend-service contract tests pass
 4. the CLI still works through `main.py`
-5. the runtime can answer a text turn through the new service API
+5. the runtime can be fully controlled through the new service API for voice modes, diagnostics, settings, and PDF jobs
 6. no repo-root path is required when app-support paths are provided
 7. the terminal UI still exposes the same practical observability for developers
 
@@ -973,7 +975,7 @@ Phase 0 is complete only if all of the following are true:
 Phase 0 should be considered successful when:
 
 - the same backend runtime core can drive the terminal UI and a future GUI
-- a stable local API exists for text turns, dependency health, settings, and runtime lifecycle
+- a stable local API exists for dependency health, settings, runtime lifecycle, and PDF jobs
 - app-owned paths work without a repo checkout
 - no core product guarantees have regressed
 
@@ -984,7 +986,7 @@ If Phase 0 succeeds, the next slice should be:
 - a thin SwiftUI shell that can:
   - launch the backend helper
   - show dependency health
-  - submit text turns
-  - display transcript, response, and diagnostics
+  - start and stop voice runtimes
+  - display transcript, response, and diagnostics from the voice pipeline
 
 That slice should still avoid full voice-mode parity until the backend service contract has proven stable.
