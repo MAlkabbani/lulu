@@ -11,7 +11,7 @@ enum BackendServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .pythonMissing(let path):
-            return "Lulu could not find the repo-local Python runtime at \(path)."
+            return "Lulu could not find the configured Python runtime at \(path)."
         case .startupTimedOut(let details):
             return details.isEmpty
                 ? "The local backend service did not become healthy in time."
@@ -77,15 +77,19 @@ actor BackendServiceCoordinator {
             "0",
         ]
         var environment = ProcessInfo.processInfo.environment
-        environment["PYTHONPATH"] = configuration.repoRoot.path
+        environment["PYTHONPATH"] = configuration.backendRoot.path
         environment["LULU_SERVICE_LAUNCH_TOKEN"] = configuration.launchToken
         environment["LULU_SERVICE_STARTUP_NONCE"] = configuration.startupNonce
         environment["LULU_SERVICE_STARTUP_CONTRACT"] = configuration.startupContractVersion
+        environment["LULU_PATH_MODE"] = configuration.pathMode
+        if let appSupportDirectory = configuration.appSupportDirectory {
+            environment["LULU_APP_SUPPORT_DIR"] = appSupportDirectory.path
+        }
         environment["VIRTUAL_ENV"] = configuration.virtualEnvPath.path
         let existingPath = environment["PATH"] ?? ""
         environment["PATH"] = "\(configuration.virtualEnvPath.appendingPathComponent("bin").path):\(existingPath)"
         process.environment = environment
-        process.currentDirectoryURL = configuration.repoRoot
+        process.currentDirectoryURL = configuration.backendRoot
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -137,8 +141,9 @@ actor BackendServiceCoordinator {
 
     private func startupContextSummary() -> String {
         var details: [String] = []
+        details.append("Launch mode: \(configuration.launchMode.rawValue)")
         details.append("Python: \(configuration.pythonExecutable.path)")
-        details.append("Repo: \(configuration.repoRoot.path)")
+        details.append("Backend root: \(configuration.backendRoot.path)")
         if let boundPort {
             details.append("Port: \(boundPort)")
         }

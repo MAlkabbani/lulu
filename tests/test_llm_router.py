@@ -181,7 +181,9 @@ def test_tool_call_saves_memory_and_generates_follow_up() -> None:
     )
     router = HybridRouter(Settings(), ollama, memory)
 
-    result = router.handle_transcript("Please remember my dentist appointment is on Friday at 2 PM.")
+    result = router.handle_transcript(
+        "Please remember my dentist appointment is on Friday at 2 PM."
+    )
 
     assert result.saved_items == ["My dentist appointment is on Friday at 2 PM."]
     assert result.reply_text == "Saved. I will remember that."
@@ -219,7 +221,10 @@ def test_router_includes_tag_aware_context_in_system_prompt() -> None:
     result = router.handle_transcript("What tea do I like?")
 
     assert result.reply_text == "You like jasmine tea."
-    assert "[tags: tea, preference] (explicit) My favorite tea is jasmine" in ollama.seen_messages[0][0]["content"]
+    assert (
+        "[tags: tea, preference] (explicit) My favorite tea is jasmine"
+        in ollama.seen_messages[0][0]["content"]
+    )
 
 
 def test_prepare_turn_returns_streamable_messages_for_non_tool_reply() -> None:
@@ -300,7 +305,10 @@ def test_prepare_turn_supports_multiple_tools_in_order() -> None:
                     },
                 ],
             },
-            {"role": "assistant", "content": "You like jasmine tea, and I saved the updated phrasing."},
+            {
+                "role": "assistant",
+                "content": "You like jasmine tea, and I saved the updated phrasing.",
+            },
         ]
     )
     router = HybridRouter(Settings(), ollama, memory)
@@ -311,7 +319,11 @@ def test_prepare_turn_supports_multiple_tools_in_order() -> None:
     assert prepared.saved_items == ["My favorite tea is jasmine."]
     assert memory.queries[-1] == ("tea preference", 1)
     assert memory.saved == [("My favorite tea is jasmine.", "tool_call")]
-    tool_names = [message["tool_name"] for message in prepared.final_messages if message["role"] == "tool"]
+    tool_names = [
+        message["tool_name"]
+        for message in prepared.final_messages
+        if message["role"] == "tool"
+    ]
     assert tool_names == ["search_memory", "save_to_memory"]
     assert [trace.stage for trace in prepared.tool_traces] == [
         "selected",
@@ -474,7 +486,10 @@ def test_handle_transcript_hands_tool_results_into_final_generation() -> None:
 
     assert result.reply_text == "I found your tea preference and refreshed it."
     tool_messages = [message for message in ollama.seen_messages[-1] if message["role"] == "tool"]
-    assert [message["tool_name"] for message in tool_messages] == ["search_memory", "save_to_memory"]
+    assert [message["tool_name"] for message in tool_messages] == [
+        "search_memory",
+        "save_to_memory",
+    ]
     first_tool_payload = json.loads(tool_messages[0]["content"])
     second_tool_payload = json.loads(tool_messages[1]["content"])
     assert first_tool_payload["result"]["hit_count"] == 1
@@ -504,7 +519,10 @@ def test_prepare_turn_allows_partial_tool_failure_without_dropping_other_results
                     },
                 ],
             },
-            {"role": "assistant", "content": "I searched memory and skipped the unsupported delete."},
+            {
+                "role": "assistant",
+                "content": "I searched memory and skipped the unsupported delete.",
+            },
         ]
     )
     router = HybridRouter(Settings(), ollama, memory)
@@ -514,7 +532,9 @@ def test_prepare_turn_allows_partial_tool_failure_without_dropping_other_results
     assert prepared.invocation_path == "model_tool_call"
     assert "partially succeeded" in prepared.invocation_summary
     tool_payloads = [
-        json.loads(message["content"]) for message in prepared.final_messages if message["role"] == "tool"
+        json.loads(message["content"])
+        for message in prepared.final_messages
+        if message["role"] == "tool"
     ]
     assert tool_payloads[0]["ok"] is False
     assert tool_payloads[0]["error"]["code"] == "unsupported_tool"
@@ -538,7 +558,10 @@ def test_prepare_turn_returns_structured_error_for_unsupported_tool() -> None:
                     }
                 ],
             },
-            {"role": "assistant", "content": "I cannot delete memories from the current tool surface."},
+            {
+                "role": "assistant",
+                "content": "I cannot delete memories from the current tool surface.",
+            },
         ]
     )
     router = HybridRouter(Settings(), ollama, memory)
@@ -572,7 +595,10 @@ def test_prepare_turn_returns_structured_error_for_malformed_tool_arguments() ->
                     }
                 ],
             },
-            {"role": "assistant", "content": "I could not save that because the tool call was malformed."},
+            {
+                "role": "assistant",
+                "content": "I could not save that because the tool call was malformed.",
+            },
         ]
     )
     router = HybridRouter(Settings(), ollama, memory)

@@ -98,13 +98,13 @@ Install machine dependencies:
 
 ```bash
 brew update
-brew install python@3.12 portaudio ffmpeg ollama
+brew install python@3.14 portaudio ffmpeg ollama
 ```
 
 Create a virtual environment and install runtime dependencies:
 
 ```bash
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
@@ -128,7 +128,7 @@ ollama pull nomic-embed-text
 If you want to run tests or lint checks, install the development dependencies instead:
 
 ```bash
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements-dev.txt
@@ -149,6 +149,7 @@ Current preview scope:
 Current next step:
 
 - Stage 5 packages and hardens the desktop app for signed, notarized distribution, including clean-machine handling for optional PDF portable-export dependencies such as `ffmpeg`
+- the current repo checkout remains the supported preview workflow, while packaged mode is now an explicit future bootstrap target rather than an implicit repo-root assumption
 
 See [macos_app/README.md](./macos_app/README.md) for the preview structure and local validation notes.
 

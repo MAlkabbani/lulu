@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import main as app_main
+from app_core.event_bus import EventBus
+from audio_handler import TTSPlaybackError
 from config import Settings
 from llm_router import PreparedTurn, ToolTrace
-import main as app_main
 from main import _process_transcript_turn
 from ollama_client import OllamaClientError
-from audio_handler import TTSPlaybackError
 from terminal_ui import TerminalUI
 
 
@@ -298,6 +299,62 @@ def test_process_transcript_turn_surfaces_tool_success_in_ui() -> None:
     assert any(event.startswith("Action completed:") for event in ui.state.recent_events)
 
 
+def test_process_transcript_turn_publishes_live_tool_status_events() -> None:
+    ui = TerminalUI(Settings())
+    bus = EventBus()
+    seen_events: list[tuple[str, dict[str, object]]] = []
+    bus.subscribe(lambda event: seen_events.append((event.event_type, event.payload)))
+    router = FixedReplyRouter(
+        PreparedTurn(
+            fixed_reply="Saved. I will remember that.",
+            memory_hits=[],
+            saved_items=["My dentist appointment is on Friday at 2 PM."],
+            invocation_path="model_tool_call",
+            invocation_summary=(
+                "Natural-language backend action succeeded: "
+                "Saved memory via save_to_memory: My dentist appointment is on Friday at 2 PM."
+            ),
+            tool_traces=[
+                ToolTrace(
+                    tool_name="save_to_memory",
+                    stage="selected",
+                    detail="Selected backend action save_to_memory.",
+                ),
+                ToolTrace(
+                    tool_name="save_to_memory",
+                    stage="succeeded",
+                    detail=(
+                        "Saved memory via save_to_memory: "
+                        "My dentist appointment is on Friday at 2 PM."
+                    ),
+                ),
+            ],
+        )
+    )
+
+    _process_transcript_turn(
+        transcript="Please remember my dentist appointment is on Friday at 2 PM.",
+        settings=Settings(tts_stream_min_chunk_chars=8, tts_stream_soft_chunk_chars=24),
+        router=router,
+        ollama_client=StreamingOllamaClient([]),
+        tts=FakeTTS(),
+        ui=ui,
+        event_bus=bus,
+    )
+
+    invocation_events = [
+        payload for event_type, payload in seen_events if event_type == "router.invocation_updated"
+    ]
+    tool_events = [payload for event_type, payload in seen_events if event_type == "tool.activity"]
+
+    assert invocation_events
+    assert invocation_events[0]["action_summary"] == "Auto action requested"
+    assert invocation_events[0]["current_tool_status"] == "No backend tool used."
+    assert [event["stage"] for event in tool_events] == ["selected", "succeeded"]
+    assert tool_events[-1]["action_summary"] == "Save memory"
+    assert tool_events[-1]["current_tool_status"] == "Save memory completed"
+
+
 def test_process_transcript_turn_surfaces_chat_only_invocation_in_ui() -> None:
     ui = TerminalUI(Settings())
     router = FixedReplyRouter(
@@ -416,7 +473,8 @@ def test_process_transcript_turn_surfaces_multi_step_action_summary_in_ui() -> N
             saved_items=[],
             invocation_path="model_tool_call",
             invocation_summary=(
-                "Natural-language backend actions succeeded: checked memory and explained a stored item."
+                "Natural-language backend actions succeeded: "
+                "checked memory and explained a stored item."
             ),
             tool_traces=[
                 ToolTrace(

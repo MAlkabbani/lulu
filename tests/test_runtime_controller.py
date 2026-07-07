@@ -3,11 +3,11 @@ from __future__ import annotations
 import threading
 import time
 
-from llm_router import PreparedTurn
-from app_core.event_bus import EventBus
 import app_core.runtime_controller as runtime_controller_module
+from app_core.event_bus import EventBus
 from app_core.runtime_controller import RuntimeController
 from config import Settings
+from llm_router import PreparedTurn
 from terminal_ui import TerminalUI
 
 
@@ -146,7 +146,11 @@ def test_runtime_controller_starts_and_stops_continuous_background_runtime(monke
             time.sleep(0.01)
         stopped.set()
 
-    monkeypatch.setattr(runtime_controller_module, "run_continuous_voice_loop", fake_continuous_loop)
+    monkeypatch.setattr(
+        runtime_controller_module,
+        "run_continuous_voice_loop",
+        fake_continuous_loop,
+    )
     controller = RuntimeController(
         settings,
         ollama_client=FakeOllama(),
@@ -191,3 +195,61 @@ def test_runtime_controller_blocks_voice_start_when_transcription_preflight_fail
     assert state.mode == "startup_error"
     assert state.runtime_mode == "continuous"
     assert "Voice runtime preflight failed" in state.last_error
+
+
+def test_runtime_controller_blocks_restart_until_previous_worker_exits(monkeypatch) -> None:
+    settings = Settings()
+    ui = TerminalUI(settings)
+    tts = FakeTTS()
+    started = threading.Event()
+    release_worker = threading.Event()
+    entered_shutdown = threading.Event()
+
+    def fake_continuous_loop(  # noqa: PLR0913, ANN001
+        settings,
+        audio_handler,
+        router,
+        ollama_client,
+        tts,
+        ui,
+        recent_spoken_chunks,
+        stop_event=None,
+        *,
+        event_bus=None,
+    ) -> None:
+        started.set()
+        while stop_event is not None and not stop_event.is_set():
+            time.sleep(0.01)
+        entered_shutdown.set()
+        release_worker.wait(2.0)
+
+    monkeypatch.setattr(
+        runtime_controller_module,
+        "run_continuous_voice_loop",
+        fake_continuous_loop,
+    )
+    controller = RuntimeController(
+        settings,
+        ollama_client=FakeOllama(),
+        memory_manager=FakeMemoryManager(),  # type: ignore[arg-type]
+        router=FixedRouter(),  # type: ignore[arg-type]
+        audio_handler=FakeAudioHandler(),  # type: ignore[arg-type]
+        tts=tts,  # type: ignore[arg-type]
+        ui=ui,
+    )
+
+    first_state = controller.start_runtime("continuous")
+
+    assert first_state.runtime_mode == "continuous"
+    assert started.wait(0.5) is True
+
+    restart_state = controller.start_runtime("continuous")
+
+    assert entered_shutdown.wait(1.5) is True
+    assert restart_state.mode == "runtime_error"
+    assert "still running" in restart_state.last_error
+    assert controller._runtime_thread is not None
+    assert controller._runtime_thread.is_alive() is True
+
+    release_worker.set()
+    assert controller.stop_runtime().mode == "idle"

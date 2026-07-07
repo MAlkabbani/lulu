@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from time import perf_counter
-import math
-import re
 
 import numpy as np
 
@@ -55,7 +55,10 @@ class WakeWordEngine:
         processed, snr_db = preprocess_wake_audio(audio, self.settings)
         features = extract_wake_features(processed, self.settings, snr_db=snr_db)
         dtw_score = max(
-            (_dtw_similarity(features.feature_matrix, template) for template in self._template_bank),
+            (
+                _dtw_similarity(features.feature_matrix, template)
+                for template in self._template_bank
+            ),
             default=0.0,
         )
         acoustic_score = _score_acoustic_shape(features, self.settings)
@@ -71,7 +74,11 @@ class WakeWordEngine:
         dynamic_threshold = float(
             np.clip(
                 self.settings.wake_acoustic_candidate_threshold
-                - (self.settings.wake_noise_tolerance * _noise_support(features.snr_db, self.settings) * 0.07),
+                - (
+                    self.settings.wake_noise_tolerance
+                    * _noise_support(features.snr_db, self.settings)
+                    * 0.07
+                ),
                 0.40,
                 0.76,
             )
@@ -515,7 +522,13 @@ def _stft(audio: np.ndarray, window_size: int, hop_size: int) -> np.ndarray:
     return np.array(frames, dtype=np.complex64)
 
 
-def _istft(stft_matrix: np.ndarray, window_size: int, hop_size: int, *, output_length: int) -> np.ndarray:
+def _istft(
+    stft_matrix: np.ndarray,
+    window_size: int,
+    hop_size: int,
+    *,
+    output_length: int,
+) -> np.ndarray:
     window = np.hanning(window_size).astype(np.float32)
     output_size = hop_size * max(0, len(stft_matrix) - 1) + window_size
     signal = np.zeros(output_size, dtype=np.float32)
@@ -579,7 +592,14 @@ def _noise_support(snr_db: float, settings: Settings) -> float:
     return float(np.clip((0.55 * baseline) + (0.45 * settings.wake_noise_tolerance), 0.0, 1.0))
 
 
-def _band_score(value: float, *, lower: float, ideal_lower: float, ideal_upper: float, upper: float) -> float:
+def _band_score(
+    value: float,
+    *,
+    lower: float,
+    ideal_lower: float,
+    ideal_upper: float,
+    upper: float,
+) -> float:
     if value <= lower or value >= upper:
         return 0.0
     if ideal_lower <= value <= ideal_upper:

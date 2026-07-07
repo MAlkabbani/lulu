@@ -11,7 +11,7 @@ Thanks for helping improve Lulu VAIA.
 ## Development Setup
 
 ```bash
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements-dev.txt
@@ -38,14 +38,22 @@ pip install -r requirements-dev.txt
 Run the focused checks that match your change:
 
 ```bash
-python -m pytest -q
-python -m compileall .
+./.venv/bin/python -m pytest -q
+./.venv/bin/ruff check .
+bash -n scripts/install_lulu.sh scripts/start_lulu.sh
 ```
 
-If you install `ruff` from `requirements-dev.txt`, you can also run:
+If your change touches the desktop shell, also run:
 
 ```bash
-ruff check .
+cd macos_app
+swiftc -typecheck Sources/LuluApp/App/*.swift \
+  Sources/LuluApp/Features/Assistant/*.swift \
+  Sources/LuluApp/Features/Diagnostics/*.swift \
+  Sources/LuluApp/Features/PDFAudiobooks/*.swift \
+  Sources/LuluApp/Features/Settings/*.swift \
+  Sources/LuluApp/Models/*.swift \
+  Sources/LuluApp/Services/*.swift
 ```
 
 ## Issues And Roadmap

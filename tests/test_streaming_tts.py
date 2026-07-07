@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 
 from audio_handler import MacOSTTS, PhraseChunker, TTSPlaybackError
@@ -305,3 +306,54 @@ def test_macos_tts_recovers_after_timeout(monkeypatch) -> None:
     assert "timed out" in str(first_errors[0]).lower()
     assert second_errors == []
     assert spoken == ["recovered chunk"]
+
+
+def test_macos_tts_reports_queue_backpressure_and_recovers(monkeypatch) -> None:
+    spoken: list[str] = []
+    reported_errors: list[TTSPlaybackError] = []
+    started = threading.Event()
+    release_first_chunk = threading.Event()
+    first_command = {"value": True}
+
+    def fake_run(
+        command: list[str],
+        check: bool,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+    ) -> SimpleNamespace:
+        if first_command["value"]:
+            first_command["value"] = False
+            started.set()
+            release_first_chunk.wait(1.0)
+        spoken.append(command[1])
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("audio_handler.subprocess.run", fake_run)
+    tts = MacOSTTS(
+        Settings(
+            tts_queue_max_chunks=1,
+            tts_queue_backpressure_seconds=0.05,
+        )
+    )
+    tts.set_on_chunk_error(reported_errors.append)
+
+    try:
+        tts.start_turn()
+        tts.enqueue_chunk("blocking chunk")
+        assert started.wait(0.5) is True
+        tts.enqueue_chunk("queued chunk")
+        tts.enqueue_chunk("overflow chunk")
+        release_first_chunk.set()
+        first_turn_errors = tts.finish_turn()
+        second_turn_errors = tts.speak("recovered chunk")
+    finally:
+        release_first_chunk.set()
+        tts.close()
+
+    assert len(first_turn_errors) == 1
+    assert reported_errors == first_turn_errors
+    assert "queue stayed full" in str(first_turn_errors[0]).lower()
+    assert first_turn_errors[0].chunk == "overflow chunk"
+    assert second_turn_errors == []
+    assert spoken == ["blocking chunk", "queued chunk", "recovered chunk"]

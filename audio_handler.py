@@ -227,7 +227,9 @@ class PhraseChunker:
 class MacOSTTS:
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or Settings()
-        self._queue: queue.Queue[str | None] = queue.Queue()
+        self._queue: queue.Queue[str | None] = queue.Queue(
+            maxsize=self._settings.tts_queue_max_chunks
+        )
         self._on_chunk_spoken: Callable[[str], None] | None = None
         self._on_chunk_error: Callable[[TTSPlaybackError], None] | None = None
         self._turn_errors: list[TTSPlaybackError] = []
@@ -250,7 +252,21 @@ class MacOSTTS:
         clean_text = text.strip()
         if not clean_text:
             return
-        self._queue.put(clean_text)
+        try:
+            self._queue.put(
+                clean_text,
+                timeout=self._settings.tts_queue_backpressure_seconds,
+            )
+        except queue.Full:
+            error = TTSPlaybackError(
+                clean_text,
+                "TTS playback fell behind because the speech queue stayed full."
+                f" Queue limit: {self._settings.tts_queue_max_chunks} chunks."
+                f" Backpressure window: {self._settings.tts_queue_backpressure_seconds:.2f}s.",
+            )
+            self._record_turn_error(error)
+            if self._on_chunk_error is not None:
+                self._on_chunk_error(error)
 
     def finish_turn(self) -> list[TTSPlaybackError]:
         self._queue.join()
@@ -654,10 +670,6 @@ def _resolve_input_device(device: str) -> int | str | None:
 
 def _wake_signature(text: str) -> str:
     tokens = [_normalize_wake_token(token) for token in text.split()]
-    if len(tokens) >= 2 and tokens[0] == "i" and tokens[1] in {"love", "like"}:
-        tokens = ["hey", "lulu", *tokens[2:]]
-    if len(tokens) >= 2 and tokens[0] == "hey" and tokens[1] in {"helo", "hulu", "loks"}:
-        tokens[1] = "lulu"
     collapsed: list[str] = []
     index = 0
 

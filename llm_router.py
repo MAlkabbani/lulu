@@ -9,7 +9,6 @@ from config import DEFAULT_SYSTEM_PROMPT, Settings
 from memory_manager import MemoryHit, MemoryManager
 from ollama_client import OllamaClient
 
-
 SAVE_TO_MEMORY_PARAMETERS = {
     "type": "object",
     "properties": {
@@ -55,7 +54,10 @@ EXPLAIN_MEMORY_HIT_PARAMETERS = {
     "properties": {
         "memory_id": {
             "type": "string",
-            "description": "The memory identifier returned by a prior search or recent-memory list.",
+            "description": (
+                "The memory identifier returned by a prior search "
+                "or recent-memory list."
+            ),
         }
     },
     "required": ["memory_id"],
@@ -328,7 +330,10 @@ class HybridRouter:
                 ),
                 ToolDefinition(
                     name="explain_memory_hit",
-                    description="Explain a specific memory returned by search or recent-memory lookup.",
+                    description=(
+                        "Explain a specific memory returned by search "
+                        "or recent-memory lookup."
+                    ),
                     parameters=EXPLAIN_MEMORY_HIT_PARAMETERS,
                     validator=self._validate_explain_memory_hit_arguments,
                     executor=self._execute_explain_memory_hit,
@@ -696,9 +701,15 @@ class HybridRouter:
         if succeeded and not failed:
             if len(succeeded) == 1 and not limit_reached:
                 return f"Natural-language backend action succeeded: {succeeded[0].detail}"
-            summary = f"Natural-language backend actions succeeded: {len(succeeded)} step(s) completed."
+            summary = (
+                "Natural-language backend actions succeeded: "
+                f"{len(succeeded)} step(s) completed."
+            )
         elif failed and not succeeded:
-            summary = f"Natural-language backend actions were rejected safely: {len(failed)} step(s) failed."
+            summary = (
+                "Natural-language backend actions were rejected safely: "
+                f"{len(failed)} step(s) failed."
+            )
         else:
             summary = (
                 "Natural-language backend actions partially succeeded: "

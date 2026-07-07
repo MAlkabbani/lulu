@@ -333,6 +333,31 @@ def test_query_memory_prefers_latest_current_revision() -> None:
     assert hits[0].text == "My favorite tea is mint"
 
 
+def test_query_memory_overfetches_before_filtering_superseded_revisions() -> None:
+    collection = FakeCollection()
+    model_client = FakeModelClient(
+        embedding_map={
+            "My favorite tea is jasmine": [0.10],
+            "My favorite tea is mint": [0.14],
+            "What tea do I like right now?": [0.10],
+        },
+        tag_map={
+            "My favorite tea is jasmine": ["tea", "preference"],
+            "My favorite tea is mint": ["tea", "preference"],
+        },
+    )
+    manager = MemoryManager(build_settings(), model_client, collection=collection)
+    original = manager.upsert_memory("My favorite tea is jasmine", source="explicit")
+    revised = manager.upsert_memory("My favorite tea is mint", source="tool_call")
+
+    hits = manager.query_memory("What tea do I like right now?", k=1)
+
+    assert len(hits) == 1
+    assert hits[0].id == revised.memory_id
+    assert hits[0].text == "My favorite tea is mint"
+    assert collection.records[original.memory_id].metadata["is_current_revision"] is False
+
+
 def test_serialize_hit_includes_match_confidence_for_search_results() -> None:
     collection = FakeCollection()
     model_client = FakeModelClient(

@@ -51,6 +51,7 @@ class SettingsUpdateRequest(StrictModel):
     embedding_model: str | None = None
     whisper_model: str | None = None
     whisper_language: str | None = None
+    exports_path: str | None = None
     wake_phrase: str | None = None
     practical_voice_mode: bool | None = None
 
@@ -121,7 +122,7 @@ class ModeRequest(StrictModel):
 
 class PDFJobRequest(StrictModel):
     pdf_path: str = Field(min_length=1)
-    output_dir: str = Field(min_length=1)
+    output_dir: str | None = None
     title: str | None = None
     author: str | None = None
     genre: str | None = None

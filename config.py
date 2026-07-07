@@ -249,6 +249,12 @@ class Settings:
     tts_say_timeout_seconds: int = field(
         default_factory=lambda: _env_int("TTS_SAY_TIMEOUT_SECONDS", "20")
     )
+    tts_queue_max_chunks: int = field(
+        default_factory=lambda: _env_int("TTS_QUEUE_MAX_CHUNKS", "8")
+    )
+    tts_queue_backpressure_seconds: float = field(
+        default_factory=lambda: _env_float("TTS_QUEUE_BACKPRESSURE_SECONDS", "1.0")
+    )
     pdf_audio_render_timeout_seconds: int = field(
         default_factory=lambda: _env_int("PDF_AUDIO_RENDER_TIMEOUT_SECONDS", "60")
     )

@@ -48,7 +48,7 @@ From that checkout root:
 The installer performs these steps in order:
 
 1. validates that it is running on macOS and that Homebrew plus curl exist
-2. installs or verifies `python@3.12`, `portaudio`, `ffmpeg`, and `ollama`
+2. installs or verifies `python@3.14`, `portaudio`, `ffmpeg`, and `ollama`
 3. creates `.env` from `.env.example` if it does not exist yet
 4. creates `.venv` and installs Python dependencies from `requirements.txt`
 5. starts a temporary managed Ollama service if Ollama is offline
@@ -218,6 +218,12 @@ The preview shell currently assumes:
 - the backend remains loopback-only and token-protected
 - the shell validates a startup handshake from the child process before trusting the negotiated loopback port
 
+Packaged-mode readiness now uses the same trust boundary, but changes where state and resources are resolved from:
+
+- preview mode keeps repo-local config, logs, exports, and Chroma storage under the checkout
+- packaged mode uses `LULU_PATH_MODE=app_support` plus `LULU_APP_SUPPORT_DIR` so runtime state moves under the app-support root
+- packaged mode must preserve the same nonce-validated startup handshake and header-only bearer auth used by preview mode
+
 ### Current limitation
 
 This environment may not support `swift build` or Xcode project generation if only Command Line Tools are available under a restricted sandbox. The source tree is still structured so it can be opened and continued in full Xcode on a normal macOS development machine.
@@ -319,8 +325,10 @@ Operational notes:
 
 GitHub Actions now enforce the baseline quality and security checks on pull requests:
 
-- `ruff check` on changed Python files in the PR or push range
+- `ruff check .`
 - targeted `pytest`
+- `bash -n scripts/install_lulu.sh scripts/start_lulu.sh`
+- Swift source validation with `swiftc -typecheck ...`
 - `bandit -ll`
 - `semgrep --config auto`
 - `pip-audit -r requirements.txt`
@@ -407,7 +415,7 @@ ollama rm nomic-embed-text
 ```bash
 brew uninstall ollama
 brew uninstall ffmpeg portaudio
-brew uninstall python@3.12
+brew uninstall python@3.14
 ```
 
 3. Remove local Ollama data if you want a full model and app cleanup on this Mac:

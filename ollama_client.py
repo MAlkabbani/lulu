@@ -124,7 +124,9 @@ class OllamaClient:
                 try:
                     chunk = json.loads(raw_line.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise OllamaClientError("Ollama returned an invalid streaming payload.") from exc
+                    raise OllamaClientError(
+                        "Ollama returned an invalid streaming payload."
+                    ) from exc
                 message = chunk.get("message") or {}
                 content = message.get("content")
                 if content:
