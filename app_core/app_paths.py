@@ -35,6 +35,10 @@ def cache_dir() -> Path:
     return Path.home() / "Library" / "Caches" / APP_NAME
 
 
+def packaged_writable_roots() -> tuple[Path, Path]:
+    return app_support_dir(), cache_dir()
+
+
 def default_config_path() -> Path:
     configured = os.getenv(CONFIG_PATH_ENV)
     if configured:
@@ -60,4 +64,3 @@ def default_exports_path() -> Path:
     if detect_path_mode() == "app_support":
         return app_support_dir() / "exports"
     return repo_root() / "exports"
-

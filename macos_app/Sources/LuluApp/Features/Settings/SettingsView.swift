@@ -13,6 +13,15 @@ struct SettingsView: View {
                 }
             }
 
+            if let packagedFirstRunNotice = model.packagedFirstRunNotice {
+                Section("First-Run Recovery") {
+                    InlineNotice(packagedFirstRunNotice, tone: .info, systemImage: "wrench.and.screwdriver.fill")
+                    ForEach(Array(model.packagedRemediationItems.enumerated()), id: \.offset) { _, item in
+                        ChecklistRow(item: item)
+                    }
+                }
+            }
+
             Section("Models") {
                 LabeledTextFieldRow(
                     label: "Chat Model",

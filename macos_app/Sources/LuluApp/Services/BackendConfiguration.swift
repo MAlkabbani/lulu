@@ -12,6 +12,7 @@ struct BackendConfiguration {
     let pythonExecutable: URL
     let pathMode: String
     let appSupportDirectory: URL?
+    let cacheDirectory: URL?
     let host: String
     let launchToken: String
     let startupNonce: String
@@ -30,6 +31,10 @@ struct BackendConfiguration {
             launchMode: launchMode,
             environment: environment
         )
+        let cacheDirectory = resolveCacheDirectory(
+            launchMode: launchMode,
+            environment: environment
+        )
         let token = ProcessInfo.processInfo.environment["LULU_DESKTOP_LAUNCH_TOKEN"] ?? UUID().uuidString
         return BackendConfiguration(
             launchMode: launchMode,
@@ -38,6 +43,7 @@ struct BackendConfiguration {
             pythonExecutable: resolvePythonExecutable(backendRoot: backendRoot, virtualEnvPath: virtualEnvPath),
             pathMode: launchMode == .packaged ? "app_support" : "repo",
             appSupportDirectory: appSupportDirectory,
+            cacheDirectory: cacheDirectory,
             host: "127.0.0.1",
             launchToken: token,
             startupNonce: UUID().uuidString,
@@ -96,6 +102,11 @@ struct BackendConfiguration {
         case .preview:
             return backendRoot.appendingPathComponent(".venv")
         case .packaged:
+            let runtimeRoot = backendRoot.appendingPathComponent("runtime", isDirectory: true)
+            let runtimeBin = runtimeRoot.appendingPathComponent("bin", isDirectory: true)
+            if FileManager.default.fileExists(atPath: runtimeBin.path) {
+                return runtimeRoot
+            }
             return backendRoot.appendingPathComponent(".venv")
         }
     }
@@ -111,6 +122,21 @@ struct BackendConfiguration {
             return nil
         }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("Lulu", isDirectory: true)
+    }
+
+    private static func resolveCacheDirectory(
+        launchMode: BackendLaunchMode,
+        environment: [String: String]
+    ) -> URL? {
+        if let override = environment["LULU_CACHE_DIR"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
+        guard launchMode == .packaged else {
+            return nil
+        }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
             .first?
             .appendingPathComponent("Lulu", isDirectory: true)
     }

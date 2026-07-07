@@ -11,7 +11,7 @@ enum BackendServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .pythonMissing(let path):
-            return "Lulu could not find the configured Python runtime at \(path)."
+            return "Lulu could not find the configured Python runtime. \(path)"
         case .startupTimedOut(let details):
             return details.isEmpty
                 ? "The local backend service did not become healthy in time."
@@ -64,7 +64,14 @@ actor BackendServiceCoordinator {
             return
         }
         guard FileManager.default.fileExists(atPath: configuration.pythonExecutable.path) else {
-            throw BackendServiceError.pythonMissing(configuration.pythonExecutable.path)
+            if configuration.launchMode == .packaged {
+                throw BackendServiceError.pythonMissing(
+                    "Expected a bundled runtime under \(configuration.virtualEnvPath.path). Rebuild the app package so Resources/backend/runtime is assembled."
+                )
+            }
+            throw BackendServiceError.pythonMissing(
+                "Expected the repo-local runtime at \(configuration.pythonExecutable.path). Recreate the checkout .venv or override LULU_DESKTOP_PYTHON."
+            )
         }
         let process = Process()
         process.executableURL = configuration.pythonExecutable
@@ -84,6 +91,9 @@ actor BackendServiceCoordinator {
         environment["LULU_PATH_MODE"] = configuration.pathMode
         if let appSupportDirectory = configuration.appSupportDirectory {
             environment["LULU_APP_SUPPORT_DIR"] = appSupportDirectory.path
+        }
+        if let cacheDirectory = configuration.cacheDirectory {
+            environment["LULU_CACHE_DIR"] = cacheDirectory.path
         }
         environment["VIRTUAL_ENV"] = configuration.virtualEnvPath.path
         let existingPath = environment["PATH"] ?? ""
@@ -144,6 +154,10 @@ actor BackendServiceCoordinator {
         details.append("Launch mode: \(configuration.launchMode.rawValue)")
         details.append("Python: \(configuration.pythonExecutable.path)")
         details.append("Backend root: \(configuration.backendRoot.path)")
+        details.append("Runtime root: \(configuration.virtualEnvPath.path)")
+        if let appSupportDirectory = configuration.appSupportDirectory {
+            details.append("App Support: \(appSupportDirectory.path)")
+        }
         if let boundPort {
             details.append("Port: \(boundPort)")
         }

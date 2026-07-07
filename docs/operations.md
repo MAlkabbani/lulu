@@ -221,13 +221,179 @@ The preview shell currently assumes:
 Packaged-mode readiness now uses the same trust boundary, but changes where state and resources are resolved from:
 
 - preview mode keeps repo-local config, logs, exports, and Chroma storage under the checkout
-- packaged mode uses `LULU_PATH_MODE=app_support` plus `LULU_APP_SUPPORT_DIR` so runtime state moves under the app-support root
+- packaged mode now resolves a bundled backend root from `Contents/Resources/backend`
+- packaged mode uses `LULU_PATH_MODE=app_support` plus `LULU_APP_SUPPORT_DIR` so durable runtime state moves under the app-support root
+- packaged mode also exports `LULU_CACHE_DIR` so cache-like state can move under `~/Library/Caches/Lulu`
 - packaged mode must preserve the same nonce-validated startup handshake and header-only bearer auth used by preview mode
-- the desktop Settings view should surface those launch-mode expectations clearly during first-run onboarding instead of assuming repo knowledge
+- the desktop UI should surface those launch-mode expectations clearly during first-run onboarding instead of assuming repo knowledge
+- packaged first-run guidance must stay honest that Ollama is still external and `ffmpeg` remains optional for portable PDF export only
+
+### Packaged app build path
+
+The Stage 5 repo now includes a real app project plus packaging scripts under `macos_app/`:
+
+- `macos_app/Lulu.xcodeproj`
+- `macos_app/Info.plist`
+- `macos_app/Lulu.entitlements`
+- `macos_app/Packaging/assemble_backend_bundle.sh`
+- `macos_app/Packaging/package_macos_app.sh`
+- `macos_app/Packaging/notarize_macos_app.sh`
+
+The build path is:
+
+1. build `Lulu.app` from `Lulu.xcodeproj`
+2. assemble a bundled backend snapshot under `Contents/Resources/backend`
+3. copy a relocatable Python runtime into `Contents/Resources/backend/runtime`
+4. optionally sign the app and create a DMG
+5. notarize and staple the DMG as a separate maintainer step
+
+Validate the packaged project:
+
+```bash
+cd macos_app
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project Lulu.xcodeproj -list
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -project Lulu.xcodeproj \
+  -scheme Lulu \
+  -configuration Debug \
+  -destination "platform=macOS" \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+```
+
+Assemble an unsigned packaged app bundle for validation:
+
+```bash
+cd macos_app
+LULU_SKIP_SIGNING=1 LULU_SKIP_DMG=1 ./Packaging/package_macos_app.sh
+```
+
+Create a signed release artifact when maintainer credentials are available:
+
+```bash
+cd macos_app
+export LULU_CODESIGN_IDENTITY="Developer ID Application: Example Team (TEAMID)"
+./Packaging/package_macos_app.sh
+./Packaging/notarize_macos_app.sh ./build/release/Lulu-Release.dmg
+```
+
+### First signed and notarized release checklist
+
+Use this checklist for the first release candidate that is expected to ship as a signed, notarized direct-download build.
+
+#### 1. Signing prerequisites
+
+Confirm all of the following before you build the release artifact:
+
+- full Xcode is installed and reachable through `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
+- the maintainer machine has a valid `Developer ID Application` certificate in Keychain
+- the maintainer machine has notarization access configured through either:
+  - `LULU_NOTARY_PROFILE`, or
+  - `LULU_APPLE_TEAM_ID`, `LULU_APPLE_ID`, and `LULU_APPLE_APP_PASSWORD`
+- the bundled Python runtime source for packaging is available at `.venv` or via `LULU_BUNDLED_PYTHON_DIR`
+- Ollama is installed on the validation machine for the post-install workflow
+
+#### 2. Build the release artifact
+
+From the repo root:
+
+```bash
+cd macos_app
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+export LULU_CODESIGN_IDENTITY="Developer ID Application: Example Team (TEAMID)"
+./Packaging/package_macos_app.sh
+```
+
+Expected outputs:
+
+- `macos_app/build/release/Lulu.app`
+- `macos_app/build/release/Lulu-Release.dmg`
+
+#### 3. Notarize and staple the DMG
+
+Submit the DMG and wait for completion:
+
+```bash
+cd macos_app
+./Packaging/notarize_macos_app.sh ./build/release/Lulu-Release.dmg
+```
+
+After the script succeeds, verify the staple:
+
+```bash
+xcrun stapler validate ./build/release/Lulu-Release.dmg
+```
+
+#### 4. Verify the signed artifact locally
+
+Check the app bundle signature:
+
+```bash
+codesign --verify --deep --strict --verbose=2 ./build/release/Lulu.app
+codesign -dvv ./build/release/Lulu.app
+```
+
+Check Gatekeeper acceptance:
+
+```bash
+spctl --assess --type open --context context:primary-signature --verbose=2 \
+  ./build/release/Lulu-Release.dmg
+spctl --assess --type execute --verbose=2 ./build/release/Lulu.app
+```
+
+Confirm the packaged backend layout exists:
+
+```bash
+test -d ./build/release/Lulu.app/Contents/Resources/backend || echo "missing backend bundle"
+test -x ./build/release/Lulu.app/Contents/Resources/backend/runtime/bin/python || \
+  echo "missing bundled python runtime"
+```
+
+#### 5. Clean-machine install checklist
+
+Use a separate Apple Silicon Mac or a clean macOS user profile with:
+
+- no Lulu repo checkout in the validation path
+- no inherited `.venv`
+- no pre-existing `~/Library/Application Support/Lulu`
+- no pre-existing `~/Library/Caches/Lulu`
+
+Then validate the following in order:
+
+1. Open the DMG and drag `Lulu.app` into `/Applications`.
+2. Launch `Lulu.app` from `/Applications`, not from the repo build folder.
+3. Confirm first launch succeeds without referencing a repo checkout.
+4. Confirm `~/Library/Application Support/Lulu` and `~/Library/Caches/Lulu` are created after launch.
+5. Confirm the app does not create or require repo-local `logs/`, `exports/`, `vault_db/`, or `.venv`.
+6. Confirm the backend reaches healthy state from the bundled runtime and the app does not report a missing repo-local Python path.
+7. Deny microphone access once and confirm the app shows recovery guidance plus an actionable path back to macOS Privacy settings.
+8. Grant microphone access and confirm the blocked state clears after retry or refresh.
+9. With Ollama stopped or absent, confirm packaged-mode guidance explains that Ollama is external and required for voice runtime.
+10. With Ollama running but required models missing, confirm the app instructs the operator to pull `llama3.2:3b` and `nomic-embed-text`.
+11. After Ollama and models are ready, confirm continuous voice mode can start, stop, and reconnect cleanly.
+12. Confirm turn-based voice mode can also start and stop cleanly.
+13. Run a PDF dry run and confirm it completes from the packaged app.
+14. Run a PDF export with portable format set to `None` and confirm AIFF-only export works without `ffmpeg`.
+15. If `ffmpeg` is not installed, confirm the packaged app labels portable export as optional and blocks only the portable conversion path.
+16. If `ffmpeg` is installed, confirm WAV, M4A, or MP3 portable export completes successfully.
+17. Confirm exported files resolve under the packaged writable state path, not under a repo checkout.
+18. Quit and relaunch the app to confirm settings, diagnostics, and launch-mode guidance remain stable.
+
+#### 6. Release signoff criteria
+
+Do not mark the first packaged release candidate ready until all of the following are true:
+
+- notarization succeeded and `stapler validate` passed
+- `codesign --verify` and `spctl --assess` passed for the produced artifacts
+- the packaged app launched from `/Applications` on a clean Apple Silicon machine
+- the bundled backend bootstrapped without a repo checkout
+- writable state stayed under Application Support and Caches
+- packaged first-run guidance remained truthful about external Ollama and optional `ffmpeg`
+- voice runtime start/stop and PDF flows passed the clean-machine checks above
 
 ### Current limitation
 
-This environment may not support `swift build` or Xcode project generation if only Command Line Tools are available under a restricted sandbox. The source tree is still structured so it can be opened and continued in full Xcode on a normal macOS development machine.
+This environment may not support every Swift Package workflow if only Command Line Tools are active under a restricted sandbox. The packaged app target itself now builds with full Xcode, but signing and notarization still depend on maintainer-owned Apple credentials that are intentionally not stored in the repo.
 
 ## Offline PDF Audiobooks
 

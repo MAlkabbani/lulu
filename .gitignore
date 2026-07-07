@@ -26,3 +26,4 @@ chroma/
 outputs/audiobooks/
 macos_app/.build/
 macos_app/.swiftpm/
+macos_app/build/

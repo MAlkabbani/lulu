@@ -610,25 +610,51 @@ final class AppModel: ObservableObject {
         UserFacingText.launchModeLabel(settings?.pathMode)
     }
 
+    var isPackagedMode: Bool {
+        settings?.pathMode == "app_support"
+    }
+
     var launchModeNotice: String {
-        if settings?.pathMode == "app_support" {
-            return "Packaged mode stores Lulu state under App Support and should guide first-run setup without assuming a repo checkout."
+        if isPackagedMode {
+            return "Packaged mode uses a bundled backend runtime plus App Support and Caches for writable state. Ollama and optional ffmpeg still remain external machine prerequisites."
         }
-        return "Preview mode still expects a repo checkout and a repo-local virtual environment. Packaged mode is a separate future bootstrap path."
+        return "Preview mode still expects a repo checkout and a repo-local virtual environment. The packaged release path now uses a bundled backend runtime instead of the checkout .venv."
     }
 
     var launchModeChecklistItems: [ChecklistItem] {
-        if settings?.pathMode == "app_support" {
+        if isPackagedMode {
             return [
                 ChecklistItem(
-                    title: "App Support State",
+                    title: "Bundled Backend Runtime",
+                    status: UserFacingText.remediationStatusLabel(ready: backendHealthy),
+                    detail: backendHealthy
+                        ? "The packaged app reached its bundled backend helper successfully."
+                        : "If startup fails immediately, rebuild or reinstall the packaged app so Resources/backend/runtime is present.",
+                    tone: backendHealthy ? .success : .danger
+                ),
+                ChecklistItem(
+                    title: "Writable State",
                     status: "Ready",
-                    detail: "Runtime state should resolve under the app-support root instead of the repo checkout.",
+                    detail: "Runtime state should resolve under Application Support and Caches instead of the repo checkout.",
                     tone: .success
                 ),
                 ChecklistItem(
+                    title: "External Dependencies",
+                    status: UserFacingText.remediationStatusLabel(
+                        ready: dependencyHealth?.ollamaReachable == true,
+                        required: true
+                    ),
+                    detail: dependencyHealth?.ollamaReachable == true
+                        ? "Ollama remains external and is currently reachable from the packaged app."
+                        : "Install or start Ollama separately before using the packaged voice runtime.",
+                    tone: dependencyHealth?.ollamaReachable == true ? .success : .warning
+                ),
+                ChecklistItem(
                     title: "Optional PDF Export Dependencies",
-                    status: dependencyHealth?.ffmpegAvailable == true ? "Ready" : "Optional",
+                    status: UserFacingText.remediationStatusLabel(
+                        ready: dependencyHealth?.ffmpegAvailable == true,
+                        required: false
+                    ),
                     detail: dependencyHealth?.ffmpegAvailable == true
                         ? "Portable PDF export is ready in packaged mode."
                         : "Portable PDF export still needs ffmpeg. AIFF export remains available without it.",
@@ -640,14 +666,71 @@ final class AppModel: ObservableObject {
             ChecklistItem(
                 title: "Repo Checkout",
                 status: "Required",
-                detail: "Preview mode still relies on the checked-out source tree and repo-local configuration paths.",
+                detail: "Preview mode still relies on the checked-out source tree, repo-local configuration paths, and local scripts.",
                 tone: .warning
             ),
             ChecklistItem(
                 title: "Local Virtual Environment",
                 status: "Required",
-                detail: "The desktop preview still expects the repo-local .venv for backend startup.",
+                detail: "The desktop preview still expects the repo-local .venv for backend startup instead of a bundled runtime.",
                 tone: .warning
+            ),
+        ]
+    }
+
+    var packagedFirstRunNotice: String? {
+        guard isPackagedMode else {
+            return nil
+        }
+        if !backendHealthy {
+            return "This packaged build should launch a bundled backend from the app bundle. Recover backend packaging first, then continue with Ollama, model, or microphone setup."
+        }
+        return "Packaged mode keeps the backend inside the app bundle, but Ollama and optional ffmpeg still require separate machine setup."
+    }
+
+    var packagedRemediationItems: [ChecklistItem] {
+        guard isPackagedMode else {
+            return []
+        }
+
+        let modelsReady = dependencyHealth?.chatModelAvailable == true && dependencyHealth?.embeddingModelAvailable == true
+        let microphoneReady = voicePreflight.microphoneStatus == "authorized"
+
+        return [
+            ChecklistItem(
+                title: "Ollama Service",
+                status: UserFacingText.remediationStatusLabel(ready: dependencyHealth?.ollamaReachable == true),
+                detail: dependencyHealth?.ollamaReachable == true
+                    ? "Ollama is reachable from the packaged app."
+                    : "Install Ollama, start `ollama serve`, then reopen Lulu or refresh diagnostics.",
+                tone: dependencyHealth?.ollamaReachable == true ? .success : .warning
+            ),
+            ChecklistItem(
+                title: "Required Models",
+                status: UserFacingText.remediationStatusLabel(ready: modelsReady),
+                detail: modelsReady
+                    ? "The default chat and embedding models are already available."
+                    : "Run `ollama pull llama3.2:3b` and `ollama pull nomic-embed-text` before using voice features.",
+                tone: modelsReady ? .success : .warning
+            ),
+            ChecklistItem(
+                title: "Microphone Permission",
+                status: UserFacingText.remediationStatusLabel(ready: microphoneReady),
+                detail: microphoneReady
+                    ? "Microphone access is already granted for packaged voice capture."
+                    : "Grant microphone access in macOS Privacy settings, then retry continuous or turn-based voice mode.",
+                tone: microphoneReady ? .success : .warning
+            ),
+            ChecklistItem(
+                title: "Portable PDF Export",
+                status: UserFacingText.remediationStatusLabel(
+                    ready: dependencyHealth?.ffmpegAvailable == true,
+                    required: false
+                ),
+                detail: dependencyHealth?.ffmpegAvailable == true
+                    ? "ffmpeg is available for optional WAV, M4A, or MP3 export."
+                    : "Install ffmpeg only if you need portable PDF export copies. Voice runtime and AIFF export remain available without it.",
+                tone: dependencyHealth?.ffmpegAvailable == true ? .success : .warning
             ),
         ]
     }
@@ -659,7 +742,11 @@ final class AppModel: ObservableObject {
                 status: UserFacingText.booleanStatusLabel(backendHealthy),
                 detail: backendHealthy
                     ? "The desktop app can talk to Lulu's local backend service."
-                    : "Start or recover the local backend before using voice or PDF features.",
+                    : (
+                        isPackagedMode
+                            ? "Recover the packaged backend runtime first. Rebuild or reinstall the app if the bundled helper is missing."
+                            : "Start or recover the local backend before using voice or PDF features."
+                    ),
                 tone: backendHealthy ? .success : .warning
             ),
             ChecklistItem(

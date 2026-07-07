@@ -34,6 +34,7 @@ def test_app_support_mode_paths_use_library_defaults(monkeypatch, tmp_path: Path
     assert app_paths.default_logs_path() == app_support_root / "logs"
     assert app_paths.default_exports_path() == app_support_root / "exports"
     assert app_paths.cache_dir() == cache_root
+    assert app_paths.packaged_writable_roots() == (app_support_root, cache_root)
 
 
 def test_explicit_config_path_override_beats_path_mode(monkeypatch, tmp_path: Path) -> None:
@@ -43,3 +44,13 @@ def test_explicit_config_path_override_beats_path_mode(monkeypatch, tmp_path: Pa
     monkeypatch.setenv(app_paths.CONFIG_PATH_ENV, str(custom_config_path))
 
     assert app_paths.default_config_path() == custom_config_path
+
+
+def test_packaged_writable_roots_expand_user_overrides(monkeypatch) -> None:
+    monkeypatch.setenv(app_paths.APP_SUPPORT_DIR_ENV, "~/Library/Application Support/CustomLulu")
+    monkeypatch.setenv(app_paths.CACHE_DIR_ENV, "~/Library/Caches/CustomLulu")
+
+    app_support_root, cache_root = app_paths.packaged_writable_roots()
+
+    assert app_support_root == Path.home() / "Library" / "Application Support" / "CustomLulu"
+    assert cache_root == Path.home() / "Library" / "Caches" / "CustomLulu"

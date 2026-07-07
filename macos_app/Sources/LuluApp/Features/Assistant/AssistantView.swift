@@ -92,6 +92,17 @@ struct AssistantView: View {
                     }
                 }
 
+                if let packagedFirstRunNotice = model.packagedFirstRunNotice {
+                    GroupBox("Packaged First-Run") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            InlineNotice(packagedFirstRunNotice, tone: .info, systemImage: "shippingbox.fill")
+                            ForEach(Array(model.packagedRemediationItems.enumerated()), id: \.offset) { _, item in
+                                ChecklistRow(item: item)
+                            }
+                        }
+                    }
+                }
+
                 GroupBox("Transcript") {
                     ScrollView {
                         if model.transcript.isEmpty {

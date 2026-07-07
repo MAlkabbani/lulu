@@ -149,8 +149,9 @@ Current preview scope:
 
 Current next step:
 
-- Stage 5 packages and hardens the desktop app for signed, notarized distribution, including clean-machine handling for optional PDF portable-export dependencies such as `ffmpeg`
-- the current repo checkout remains the supported preview workflow, while packaged mode is now an explicit future bootstrap target rather than an implicit repo-root assumption
+- Stage 5 now includes a real `macos_app/Lulu.xcodeproj` target and packaging scripts that assemble a bundled backend runtime under `Contents/Resources/backend`
+- signing, notarization, and clean-machine release validation remain the remaining closeout work for the packaged app path
+- the current repo checkout remains the supported preview workflow, while packaged mode is now a concrete build path rather than only a future bootstrap target
 
 See [macos_app/README.md](./macos_app/README.md) for the preview structure and local validation notes.
 

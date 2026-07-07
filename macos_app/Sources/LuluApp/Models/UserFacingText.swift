@@ -98,6 +98,13 @@ enum UserFacingText {
         value ? "Ready" : "Needs Attention"
     }
 
+    static func remediationStatusLabel(ready: Bool, required: Bool = true) -> String {
+        if ready {
+            return "Ready"
+        }
+        return required ? "Action Needed" : "Optional"
+    }
+
     static func launchModeLabel(_ pathMode: String?) -> String {
         pathMode == "app_support" ? "Packaged App Mode" : "Preview Checkout Mode"
     }

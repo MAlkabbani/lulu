@@ -59,6 +59,17 @@ struct DiagnosticsView: View {
                     }
                 }
 
+                if let packagedFirstRunNotice = model.packagedFirstRunNotice {
+                    GroupBox("Packaged Guidance") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            InlineNotice(packagedFirstRunNotice, tone: .info, systemImage: "shippingbox.fill")
+                            ForEach(Array(model.packagedRemediationItems.enumerated()), id: \.offset) { _, item in
+                                ChecklistRow(item: item)
+                            }
+                        }
+                    }
+                }
+
                 GroupBox("Dependencies") {
                     VStack(alignment: .leading, spacing: 8) {
                         LabeledValueRow(
