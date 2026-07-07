@@ -189,7 +189,9 @@ The service emits versioned JSON envelopes carrying runtime events such as trans
 
 ### Scope
 
-The Stage 2 desktop preview lives in `macos_app/` and currently focuses on voice-mode diagnostics and control from a thin native shell. It is not yet the packaged end-user `.app`.
+The current desktop preview lives in `macos_app/` and now covers the completed Stage 3 voice-mode shell: voice runtime controls, wake-aware diagnostics, transcript and streamed response rendering, and backend-owned settings/health state. It is not yet the packaged end-user `.app`.
+
+The preview shell now also includes a separate desktop `PDF Audiobooks` utility surface built on top of the existing backend PDF job endpoints.
 
 ### Validate the SwiftUI shell source
 
@@ -308,7 +310,7 @@ Operational notes:
 - `MLX_WHISPER_MODEL`: local model path or `repo@revision` for pinned remote references
 - `MLX_WHISPER_REVISION`: optional pinned revision when `MLX_WHISPER_MODEL` is a remote repo id without an inline `@revision`
 - `TTS_SAY_TIMEOUT_SECONDS`: timeout for live `say` playback
-- `PDF_AUDIO_RENDER_TIMEOUT_SECONDS`: timeout for section rendering via `say`
+- `PDF_AUDIO_RENDER_TIMEOUT_SECONDS`: minimum timeout floor for section rendering via `say`; long sections scale above this floor automatically
 - `PDF_AUDIO_CONVERT_TIMEOUT_SECONDS`: timeout for `ffmpeg` portable conversion
 - `PDF_AUDIO_PLAYBACK_TIMEOUT_SECONDS`: timeout for export playback via `say` or `afplay`
 

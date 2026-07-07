@@ -31,9 +31,14 @@ final class AppModel: ObservableObject {
     @Published var recentRuntimeEvents: [String] = []
     @Published var voicePreflight = VoicePreflightSnapshot()
     @Published var runtimeActive = false
+    @Published var pdfDraft = PDFJobDraft()
+    @Published var pdfJob: PDFJobResponse?
+    @Published var pdfStatusMessage = ""
+    @Published var pdfWorkflowBusy = false
 
     private let backend = BackendServiceCoordinator()
     private var eventTask: Task<Void, Never>?
+    private var pdfPollingTask: Task<Void, Never>?
 
     func bootstrap() async {
         eventTask?.cancel()
@@ -60,6 +65,7 @@ final class AppModel: ObservableObject {
             await refreshMicrophoneStatus()
             if let settings {
                 settingsDraft = SettingsDraft(from: settings)
+                applyDefaultPDFOutputDirectory(from: settings)
             }
             connectionStatus = "Desktop shell connected to Lulu backend. Start a voice runtime when ready."
             appendEvent("Desktop shell bootstrapped successfully.")
@@ -77,6 +83,7 @@ final class AppModel: ObservableObject {
 
     func shutdown() async {
         eventTask?.cancel()
+        pdfPollingTask?.cancel()
         websocketConnected = false
         await backend.shutdown()
     }
@@ -93,6 +100,9 @@ final class AppModel: ObservableObject {
             runtimeState = try await fetchedState
             apply(diagnostics: try await fetchedDiagnostics)
             await refreshMicrophoneStatus()
+            if let settings {
+                applyDefaultPDFOutputDirectory(from: settings)
+            }
             diagnosticsNote = await backend.capturedLogs()
         } catch {
             backendHealthy = false
@@ -115,6 +125,7 @@ final class AppModel: ObservableObject {
             settings = try await backend.fetchSettings()
             if let settings {
                 settingsDraft = SettingsDraft(from: settings)
+                applyDefaultPDFOutputDirectory(from: settings)
             }
             appendEvent("Settings saved for desktop shell preview.")
         } catch {
@@ -173,6 +184,55 @@ final class AppModel: ObservableObject {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    func submitPDFJob() async {
+        guard await ensureBackendReady(for: "PDF export", allowBootstrapRetry: true) else {
+            return
+        }
+
+        let request = pdfDraft.createRequest
+        guard !request.pdfPath.isEmpty else {
+            pdfStatusMessage = "Choose a PDF file before starting a job."
+            return
+        }
+        guard !request.outputDir.isEmpty else {
+            pdfStatusMessage = "Choose an export destination before starting a job."
+            return
+        }
+
+        pdfWorkflowBusy = true
+        pdfStatusMessage = request.dryRun ? "Submitting PDF dry run..." : "Submitting PDF export job..."
+        do {
+            let response = try await backend.createPDFJob(request)
+            pdfJob = response
+            pdfStatusMessage = response.dryRun ? "PDF dry run queued." : "PDF audiobook job queued."
+            appendEvent("PDF job queued: \(response.jobID)")
+            startPollingPDFJob(jobID: response.jobID)
+        } catch {
+            pdfWorkflowBusy = false
+            pdfStatusMessage = "PDF job failed to start: \(error.localizedDescription)"
+            appendEvent("PDF job submission failed: \(error.localizedDescription)")
+        }
+    }
+
+    func refreshPDFJobStatus() async {
+        guard let jobID = pdfJob?.jobID else {
+            pdfStatusMessage = "No PDF job has been started yet."
+            return
+        }
+        guard await ensureBackendReady(for: "PDF status refresh", allowBootstrapRetry: true) else {
+            return
+        }
+        await fetchPDFJob(jobID: jobID, updateBusyState: false)
+    }
+
+    func resetPDFWorkflow() {
+        pdfPollingTask?.cancel()
+        pdfPollingTask = nil
+        pdfJob = nil
+        pdfStatusMessage = ""
+        pdfWorkflowBusy = false
     }
 
     private func apply(event: RuntimeEventEnvelope) {
@@ -296,6 +356,50 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func startPollingPDFJob(jobID: String) {
+        pdfPollingTask?.cancel()
+        pdfPollingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                await self.fetchPDFJob(jobID: jobID, updateBusyState: true)
+                let status = self.pdfJob?.status ?? "unknown"
+                if ["completed", "failed"].contains(status) {
+                    self.pdfWorkflowBusy = false
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private func fetchPDFJob(jobID: String, updateBusyState: Bool) async {
+        do {
+            let response = try await backend.fetchPDFJob(jobID: jobID)
+            pdfJob = response
+            if updateBusyState {
+                pdfWorkflowBusy = ["pending", "running"].contains(response.status)
+            }
+            switch response.status {
+            case "completed":
+                pdfStatusMessage = response.dryRun ? "PDF dry run completed." : "PDF audiobook export completed."
+                appendEvent("PDF job completed: \(response.jobID)")
+            case "failed":
+                pdfStatusMessage = response.error ?? "PDF job failed."
+                appendEvent("PDF job failed: \(response.error ?? response.jobID)")
+            case "running":
+                pdfStatusMessage = response.dryRun ? "PDF dry run is running..." : "PDF audiobook export is running..."
+            default:
+                pdfStatusMessage = response.dryRun ? "PDF dry run is pending..." : "PDF audiobook job is pending..."
+            }
+        } catch {
+            if updateBusyState {
+                pdfWorkflowBusy = false
+            }
+            pdfStatusMessage = "PDF status refresh failed: \(error.localizedDescription)"
+            appendEvent("PDF job status refresh failed: \(error.localizedDescription)")
+        }
+    }
+
     private func ensureBackendReady(for action: String, allowBootstrapRetry: Bool = false) async -> Bool {
         guard !backendHealthy else {
             return true
@@ -323,6 +427,13 @@ final class AppModel: ObservableObject {
         recentRuntimeEvents = Array(([line] + recentRuntimeEvents).prefix(15))
         if eventLog.count > 100 {
             eventLog.removeFirst(eventLog.count - 100)
+        }
+    }
+
+    private func applyDefaultPDFOutputDirectory(from settings: SettingsResponse) {
+        let current = pdfDraft.outputDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        if current.isEmpty {
+            pdfDraft.outputDir = settings.exportsPath
         }
     }
 
