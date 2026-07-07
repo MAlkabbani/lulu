@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MACOS_APP_ROOT = PROJECT_ROOT / "macos_app"
 
@@ -24,7 +23,9 @@ def test_info_plist_declares_microphone_usage() -> None:
 
 
 def test_xcode_project_reuses_existing_swift_sources() -> None:
-    project_text = (MACOS_APP_ROOT / "Lulu.xcodeproj" / "project.pbxproj").read_text(encoding="utf-8")
+    project_text = (
+        MACOS_APP_ROOT / "Lulu.xcodeproj" / "project.pbxproj"
+    ).read_text(encoding="utf-8")
 
     assert "Sources/LuluApp" in project_text
     assert "com.apple.product-type.application" in project_text
@@ -33,7 +34,9 @@ def test_xcode_project_reuses_existing_swift_sources() -> None:
 
 
 def test_package_script_assembles_bundled_backend_runtime() -> None:
-    script_text = (MACOS_APP_ROOT / "Packaging" / "package_macos_app.sh").read_text(encoding="utf-8")
+    script_text = (MACOS_APP_ROOT / "Packaging" / "package_macos_app.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert 'assemble_backend_bundle.sh' in script_text
     assert "LULU_SKIP_SIGNING" in script_text
