@@ -50,6 +50,7 @@ struct DiagnosticsView: View {
                         KeyValueRow(label: "Embedding Model", value: model.dependencyHealth?.embeddingModelAvailable == true ? "Present" : "Missing")
                         KeyValueRow(label: "Audio Input", value: model.dependencyHealth?.audioInputAvailable == true ? "Available" : "Unavailable")
                         KeyValueRow(label: "TTS", value: model.dependencyHealth?.ttsAvailable == true ? "Available" : "Unavailable")
+                        KeyValueRow(label: "ffmpeg", value: model.dependencyHealth?.ffmpegAvailable == true ? "Available" : "Unavailable")
                         KeyValueRow(label: "Memory Path", value: model.dependencyHealth?.memoryPathAvailable == true ? "Ready" : "Unavailable")
                         if let issues = model.dependencyHealth?.issues, !issues.isEmpty {
                             Divider()

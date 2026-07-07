@@ -27,6 +27,7 @@ class DependencyHealthResponse(StrictModel):
     embedding_model_available: bool
     audio_input_available: bool
     tts_available: bool
+    ffmpeg_available: bool
     memory_path_available: bool
     issues: list[str]
 

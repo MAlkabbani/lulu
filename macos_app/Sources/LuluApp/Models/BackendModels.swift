@@ -38,6 +38,7 @@ struct DependencyHealthResponse: Decodable {
     let embeddingModelAvailable: Bool
     let audioInputAvailable: Bool
     let ttsAvailable: Bool
+    let ffmpegAvailable: Bool
     let memoryPathAvailable: Bool
     let issues: [String]
 
@@ -49,6 +50,7 @@ struct DependencyHealthResponse: Decodable {
         case embeddingModelAvailable = "embedding_model_available"
         case audioInputAvailable = "audio_input_available"
         case ttsAvailable = "tts_available"
+        case ffmpegAvailable = "ffmpeg_available"
         case memoryPathAvailable = "memory_path_available"
         case issues
     }

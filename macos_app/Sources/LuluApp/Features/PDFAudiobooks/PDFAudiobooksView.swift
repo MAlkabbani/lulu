@@ -85,6 +85,13 @@ struct PDFAudiobooksView: View {
                             Text("M4A").tag("m4a")
                             Text("MP3").tag("mp3")
                         }
+                        if model.dependencyHealth?.ffmpegAvailable == false {
+                            Label(
+                                "Portable WAV, M4A, and MP3 export requires ffmpeg in PATH. AIFF export still works.",
+                                systemImage: "exclamationmark.triangle"
+                            )
+                            .foregroundStyle(.orange)
+                        }
 
                         Toggle("Dry Run Only", isOn: $model.pdfDraft.dryRun)
 
@@ -168,6 +175,10 @@ struct PDFAudiobooksView: View {
         badge(text: model.backendHealthy ? "Backend Ready" : "Backend Unavailable", color: model.backendHealthy ? .green : .orange)
         badge(text: model.pdfWorkflowBusy ? "Job Running" : "Idle", color: model.pdfWorkflowBusy ? .blue : .secondary)
         badge(text: model.pdfDraft.dryRun ? "Dry Run" : "Export", color: model.pdfDraft.dryRun ? .purple : .cyan)
+        badge(
+            text: model.dependencyHealth?.ffmpegAvailable == false ? "ffmpeg Missing" : "ffmpeg Ready",
+            color: model.dependencyHealth?.ffmpegAvailable == false ? .orange : .green
+        )
     }
 
     @ViewBuilder

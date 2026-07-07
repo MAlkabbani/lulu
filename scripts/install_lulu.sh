@@ -305,6 +305,7 @@ ensure_brew_formula "ffmpeg"
 ensure_brew_formula "ollama"
 
 command_exists python3.12 || die "python3.12 was not found after installation."
+command_exists ffmpeg || die "ffmpeg was not found after installation."
 
 restore_file_if_missing "${ENV_EXAMPLE}" "${ENV_FILE}"
 load_env_file
@@ -336,5 +337,6 @@ PY
 log "INFO" "Installation completed successfully."
 log "INFO" "Next steps:"
 log "INFO" "  1. Review ${ENV_FILE} and adjust AUDIO_INPUT_DEVICE if needed."
-log "INFO" "  2. Start Lulu with ./scripts/start_lulu.sh"
-log "INFO" "  3. If macOS prompts for microphone access, allow it for your terminal or IDE host process."
+log "INFO" "  2. Portable PDF exports are enabled because ffmpeg is installed."
+log "INFO" "  3. Start Lulu with ./scripts/start_lulu.sh"
+log "INFO" "  4. If macOS prompts for microphone access, allow it for your terminal or IDE host process."

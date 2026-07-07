@@ -200,6 +200,10 @@ final class AppModel: ObservableObject {
             pdfStatusMessage = "Choose an export destination before starting a job."
             return
         }
+        if !request.dryRun && request.portableFormat != "none" && dependencyHealth?.ffmpegAvailable == false {
+            pdfStatusMessage = "Portable \(request.portableFormat.uppercased()) export requires ffmpeg in PATH. Choose None for AIFF-only export or install ffmpeg first."
+            return
+        }
 
         pdfWorkflowBusy = true
         pdfStatusMessage = request.dryRun ? "Submitting PDF dry run..." : "Submitting PDF export job..."

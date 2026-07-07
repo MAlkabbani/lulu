@@ -160,6 +160,7 @@ def test_dependencies_endpoint_returns_health_payload(tmp_path: Path) -> None:
     body = response.json()
     assert body["ollama_reachable"] is True
     assert body["chat_model_available"] is True
+    assert "ffmpeg_available" in body
 
 
 def test_mode_endpoint_updates_runtime_mode(tmp_path: Path) -> None:

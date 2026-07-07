@@ -218,6 +218,15 @@ If `--portable-format` is set, Lulu then runs a second local conversion pass wit
 - this keeps long-form audiobook export separate from the streaming response path in `audio_handler.py`
 - this does not currently package chapters into M4B or add embedded audiobook metadata
 - `ffmpeg` is required only for the optional portable conversion pass
+- portable export requests now fail fast before rendering work starts if `ffmpeg` is unavailable
+
+Install `ffmpeg` on macOS with:
+
+```bash
+brew install ffmpeg
+```
+
+If you use the repo-local bootstrap path, `./scripts/install_lulu.sh` already installs `ffmpeg` for you and `./scripts/start_lulu.sh --check` now warns early if portable export support is unavailable on the current machine.
 
 ## Troubleshooting
 
@@ -257,4 +266,10 @@ The export has no playable audio files yet. Either:
 
 ### "Portable audio conversion requires ffmpeg"
 
-Install `ffmpeg` and rerun the workflow with `--portable-format`. The default AIFF export path does not require the extra conversion step.
+Install `ffmpeg` and rerun the workflow with `--portable-format`:
+
+```bash
+brew install ffmpeg
+```
+
+The default AIFF export path does not require the extra conversion step. If you installed Lulu with `./scripts/install_lulu.sh`, `ffmpeg` should already be present; rerun `./scripts/start_lulu.sh --check` to confirm the current shell can see it in `PATH`.

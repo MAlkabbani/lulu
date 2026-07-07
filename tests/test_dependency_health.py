@@ -33,6 +33,7 @@ def test_probe_dependency_health_reports_healthy_runtime(tmp_path: Path) -> None
     assert health.chat_model_available is True
     assert health.embedding_model_available is True
     assert health.memory_path_available is True
+    assert health.ffmpeg_available is True
     assert health.issues == []
 
 
@@ -45,11 +46,13 @@ def test_probe_dependency_health_reports_missing_dependencies(tmp_path: Path) ->
         available_models=[],
         audio_input_available=False,
         tts_available=False,
+        ffmpeg_available=False,
     )
 
     assert health.ollama_reachable is False
     assert health.audio_input_available is False
     assert health.tts_available is False
+    assert health.ffmpeg_available is False
     assert health.memory_path_available is False
     assert any("Unable to reach Ollama" in issue for issue in health.issues)
     assert any("Audio input is unavailable." == issue for issue in health.issues)

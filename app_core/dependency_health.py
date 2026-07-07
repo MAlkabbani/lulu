@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 from app_core.runtime_models import DependencyHealth
@@ -15,6 +16,7 @@ def probe_dependency_health(
     available_models: list[str] | None = None,
     audio_input_available: bool = True,
     tts_available: bool = True,
+    ffmpeg_available: bool | None = None,
 ) -> DependencyHealth:
     issues: list[str] = []
     ollama_reachable = False
@@ -44,6 +46,9 @@ def probe_dependency_health(
         issues.append("Audio input is unavailable.")
     if not tts_available:
         issues.append("macOS say is unavailable.")
+    resolved_ffmpeg_available = (
+        ffmpeg_available if ffmpeg_available is not None else shutil.which("ffmpeg") is not None
+    )
 
     memory_path_available = _path_is_usable(settings.chroma_path)
     if not memory_path_available:
@@ -56,6 +61,7 @@ def probe_dependency_health(
         embedding_model_available=embedding_model_available,
         audio_input_available=audio_input_available,
         tts_available=tts_available,
+        ffmpeg_available=resolved_ffmpeg_available,
         memory_path_available=memory_path_available,
         issues=issues,
     )
