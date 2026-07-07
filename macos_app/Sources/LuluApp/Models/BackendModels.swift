@@ -312,6 +312,89 @@ struct RuntimeEventEnvelope: Decodable, Sendable {
     }
 }
 
+struct PDFJobCreateRequest: Encodable {
+    let pdfPath: String
+    let outputDir: String
+    let title: String?
+    let author: String?
+    let genre: String?
+    let chapterSplitting: String
+    let dryRun: Bool
+    let portableFormat: String
+    let previewChars: Int
+    let pronunciationFile: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case pdfPath = "pdf_path"
+        case outputDir = "output_dir"
+        case title
+        case author
+        case genre
+        case chapterSplitting = "chapter_splitting"
+        case dryRun = "dry_run"
+        case portableFormat = "portable_format"
+        case previewChars = "preview_chars"
+        case pronunciationFile = "pronunciation_file"
+    }
+}
+
+struct PDFJobResponse: Decodable {
+    let apiVersion: String
+    let jobID: String
+    let status: String
+    let dryRun: Bool
+    let outputDir: String?
+    let manifestPath: String?
+    let error: String?
+    let sectionCount: Int
+    let progress: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case apiVersion = "api_version"
+        case jobID = "job_id"
+        case status
+        case dryRun = "dry_run"
+        case outputDir = "output_dir"
+        case manifestPath = "manifest_path"
+        case error
+        case sectionCount = "section_count"
+        case progress
+    }
+}
+
+struct PDFJobDraft {
+    var pdfPath = ""
+    var outputDir = ""
+    var title = ""
+    var author = ""
+    var genre = ""
+    var chapterSplitting = "auto"
+    var dryRun = false
+    var portableFormat = "none"
+    var previewChars = 400
+    var pronunciationFile = ""
+
+    var createRequest: PDFJobCreateRequest {
+        PDFJobCreateRequest(
+            pdfPath: pdfPath.trimmingCharacters(in: .whitespacesAndNewlines),
+            outputDir: outputDir.trimmingCharacters(in: .whitespacesAndNewlines),
+            title: normalizedOptional(title),
+            author: normalizedOptional(author),
+            genre: normalizedOptional(genre),
+            chapterSplitting: chapterSplitting,
+            dryRun: dryRun,
+            portableFormat: portableFormat,
+            previewChars: previewChars,
+            pronunciationFile: normalizedOptional(pronunciationFile)
+        )
+    }
+
+    private func normalizedOptional(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 struct SettingsDraft {
     var chatModel: String = ""
     var embeddingModel: String = ""

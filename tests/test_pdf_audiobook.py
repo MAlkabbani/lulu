@@ -16,6 +16,7 @@ from pdf_audiobook import (
     PDFProcessingError,
     PlaybackError,
     _command_timeout_seconds,
+    _render_timeout_seconds_for_text_path,
     _resolve_relative_paths,
     apply_pronunciation_overrides,
     build_audiobook_from_args,
@@ -388,6 +389,26 @@ def test_render_section_audio_reports_timeout(monkeypatch, tmp_path: Path) -> No
 
     with pytest.raises(Exception, match="timed out"):
         render_section_audio([text_path], progress=lambda _: None)
+
+
+def test_render_timeout_seconds_scales_for_long_text(monkeypatch, tmp_path: Path) -> None:
+    text_path = tmp_path / "01-full-book.txt"
+    text_path.write_text("A" * 7200, encoding="utf-8")
+    monkeypatch.setenv("PDF_AUDIO_RENDER_TIMEOUT_SECONDS", "60")
+
+    timeout = _render_timeout_seconds_for_text_path(text_path)
+
+    assert timeout == 430
+
+
+def test_render_timeout_seconds_keeps_env_floor_for_short_text(monkeypatch, tmp_path: Path) -> None:
+    text_path = tmp_path / "01-section.txt"
+    text_path.write_text("Short text.", encoding="utf-8")
+    monkeypatch.setenv("PDF_AUDIO_RENDER_TIMEOUT_SECONDS", "90")
+
+    timeout = _render_timeout_seconds_for_text_path(text_path)
+
+    assert timeout == 90
 
 
 def test_convert_audio_outputs_reports_timeout(monkeypatch, tmp_path: Path) -> None:

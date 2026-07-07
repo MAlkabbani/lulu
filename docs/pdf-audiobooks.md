@@ -2,6 +2,8 @@
 
 Lulu now includes a repo-local PDF-to-audiobook workflow for text-based PDFs.
 
+The backend service also exposes PDF job endpoints, and the native macOS shell now includes an initial `PDF Audiobooks` surface that drives those same backend jobs as a separate desktop utility.
+
 ## Why It Lives Here
 
 - it stays local-first and uses only local file access plus macOS `say`

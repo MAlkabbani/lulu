@@ -282,6 +282,18 @@ actor BackendServiceCoordinator {
         return try await execute(request: request, decodeAs: RuntimeStateResponse.self)
     }
 
+    func createPDFJob(_ requestBody: PDFJobCreateRequest) async throws -> PDFJobResponse {
+        var request = try makeRequest(path: "/v1/pdf-audiobook/jobs", method: "POST")
+        request.httpBody = try JSONEncoder().encode(requestBody)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return try await execute(request: request, decodeAs: PDFJobResponse.self)
+    }
+
+    func fetchPDFJob(jobID: String) async throws -> PDFJobResponse {
+        let request = try makeRequest(path: "/v1/pdf-audiobook/jobs/\(jobID)", method: "GET")
+        return try await execute(request: request, decodeAs: PDFJobResponse.self)
+    }
+
     func connectEvents(onEvent: @escaping @Sendable (RuntimeEventEnvelope) -> Void) throws -> Task<Void, Never> {
         let request = try makeRequest(url: webSocketURL(), method: "GET")
         let webSocket = session.webSocketTask(with: request)

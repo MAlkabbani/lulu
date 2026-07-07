@@ -64,6 +64,19 @@ def _command_timeout_seconds(env_name: str, default: int) -> int:
     return parsed
 
 
+def _render_timeout_seconds_for_text_path(text_path: Path) -> int:
+    base_timeout = _command_timeout_seconds("PDF_AUDIO_RENDER_TIMEOUT_SECONDS", 600)
+    try:
+        character_count = len(text_path.read_text(encoding="utf-8"))
+    except OSError:
+        return base_timeout
+
+    # `say` runtime grows roughly with spoken text length, so a fixed 60s timeout
+    # is too aggressive for long single-section books such as `full-book.txt`.
+    estimated_seconds = (character_count // 18) + 30
+    return max(base_timeout, estimated_seconds)
+
+
 class PDFToAudiobookError(RuntimeError):
     """Base class for operator-facing audiobook workflow errors."""
 
@@ -989,7 +1002,7 @@ def render_section_audio(
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=_command_timeout_seconds("PDF_AUDIO_RENDER_TIMEOUT_SECONDS", 60),
+                timeout=_render_timeout_seconds_for_text_path(text_path),
             )
         except OSError as exc:
             raise AudiobookRenderError(
