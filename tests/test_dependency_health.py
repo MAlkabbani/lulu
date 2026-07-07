@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from app_core.dependency_health import probe_dependency_health
 from config import Settings
 from ollama_client import OllamaClientError
@@ -26,6 +28,7 @@ def test_probe_dependency_health_reports_healthy_runtime(tmp_path: Path) -> None
         settings,
         HealthyOllama(),
         available_models=[settings.chat_model, settings.embedding_model],
+        ffmpeg_available=True,
     )
 
     assert health.ollama_reachable is True
@@ -35,6 +38,23 @@ def test_probe_dependency_health_reports_healthy_runtime(tmp_path: Path) -> None
     assert health.memory_path_available is True
     assert health.ffmpeg_available is True
     assert health.issues == []
+
+
+def test_probe_dependency_health_auto_detects_missing_ffmpeg(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    settings = Settings(chroma_path=tmp_path / "vault_db")
+    settings.chroma_path.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("app_core.dependency_health.shutil.which", lambda _: None)
+
+    health = probe_dependency_health(
+        settings,
+        HealthyOllama(),
+        available_models=[settings.chat_model, settings.embedding_model],
+    )
+
+    assert health.ffmpeg_available is False
 
 
 def test_probe_dependency_health_reports_missing_dependencies(tmp_path: Path) -> None:
