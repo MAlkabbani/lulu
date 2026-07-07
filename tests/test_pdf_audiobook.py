@@ -17,7 +17,6 @@ from pdf_audiobook import (
     PlaybackError,
     _command_timeout_seconds,
     _render_timeout_seconds_for_text_path,
-    require_portable_conversion_dependency,
     _resolve_relative_paths,
     apply_pronunciation_overrides,
     build_audiobook_from_args,
@@ -27,6 +26,7 @@ from pdf_audiobook import (
     main,
     play_export_directory,
     render_section_audio,
+    require_portable_conversion_dependency,
     split_into_sections,
     update_manifest_audio_outputs,
     validate_input_pdf,
@@ -448,7 +448,10 @@ def test_build_audiobook_from_args_rejects_portable_export_before_render_without
         render_called = True
         return []
 
-    monkeypatch.setattr("pdf_audiobook.shutil.which", lambda name: None if name == "ffmpeg" else "/usr/bin/say")
+    monkeypatch.setattr(
+        "pdf_audiobook.shutil.which",
+        lambda name: None if name == "ffmpeg" else "/usr/bin/say",
+    )
     monkeypatch.setattr("pdf_audiobook.render_section_audio", fake_render)
 
     with pytest.raises(Exception, match="requires ffmpeg"):
