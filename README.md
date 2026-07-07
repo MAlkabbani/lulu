@@ -136,7 +136,7 @@ pip install -r requirements-dev.txt
 
 ## Desktop Shell Preview
 
-Stages 2 and 3 of the desktop-app roadmap now provide a thin native SwiftUI shell under `macos_app/`.
+Stages 3 and 4 of the desktop-app roadmap now provide the current thin native SwiftUI shell baseline under `macos_app/`.
 
 Current preview scope:
 

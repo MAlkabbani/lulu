@@ -189,7 +189,7 @@ The service emits versioned JSON envelopes carrying runtime events such as trans
 
 ### Scope
 
-The current desktop preview lives in `macos_app/` and now covers the completed Stage 3 voice-mode shell: voice runtime controls, wake-aware diagnostics, transcript and streamed response rendering, and backend-owned settings/health state. It is not yet the packaged end-user `.app`.
+The current desktop preview lives in `macos_app/` and now covers the completed Stage 3 voice-mode shell plus the completed Stage 4 PDF utility surface: voice runtime controls, wake-aware diagnostics, transcript and streamed response rendering, backend-owned settings and health state, and a separate desktop `PDF Audiobooks` workflow. It is not yet the packaged end-user `.app`.
 
 The preview shell now also includes a separate desktop `PDF Audiobooks` utility surface built on top of the existing backend PDF job endpoints.
 
@@ -202,6 +202,7 @@ cd macos_app
 swiftc -typecheck Sources/LuluApp/App/*.swift \
   Sources/LuluApp/Features/Assistant/*.swift \
   Sources/LuluApp/Features/Diagnostics/*.swift \
+  Sources/LuluApp/Features/PDFAudiobooks/*.swift \
   Sources/LuluApp/Features/Settings/*.swift \
   Sources/LuluApp/Models/*.swift \
   Sources/LuluApp/Services/*.swift
