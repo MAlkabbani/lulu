@@ -36,6 +36,9 @@ def build_synthetic_wake_corpus() -> list[SyntheticWakeSample]:
         ("play some music", "play some music", False),
         ("hey blue", "hey blue", False),
         ("hello there", "hello there", False),
+        ("i love music", "i love music", False),
+        ("he looks busy", "he looks busy", False),
+        ("hey hello there", "hey hello there", False),
     ]
     corpus: list[SyntheticWakeSample] = []
     noises = ["traffic", "office", "appliance"]
@@ -110,7 +113,9 @@ def run_synthetic_wake_benchmark(settings: Settings | None = None) -> dict[str, 
 
     total = len(corpus)
     correct = sum(
-        1 for predicted, sample in zip(predictions, corpus, strict=True) if predicted == sample.expected_match
+        1
+        for predicted, sample in zip(predictions, corpus, strict=True)
+        if predicted == sample.expected_match
     )
     sorted_latencies = sorted(latencies_ms)
     p95_index = min(len(sorted_latencies) - 1, int(len(sorted_latencies) * 0.95))

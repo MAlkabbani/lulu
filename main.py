@@ -4,19 +4,38 @@ import argparse
 
 from app_core.runtime_controller import (
     RuntimeController,
+)
+from app_core.runtime_controller import (
     bootstrap_connection as _bootstrap_connection,
+)
+from app_core.runtime_controller import (
     capture_audio as _capture_audio,
+)
+from app_core.runtime_controller import (
     cooldown_active as _cooldown_active,
-    next_conversation_deadline as _next_conversation_deadline,
+)
+from app_core.runtime_controller import (
     process_transcript_turn as _process_transcript_turn,
-    recent_assistant_audio_guard_active as _recent_assistant_audio_guard_active,
+)
+from app_core.runtime_controller import (
     remaining_window as _remaining_window,
-    should_start_playback as _should_start_playback,
+)
+from app_core.runtime_controller import (
     should_suppress_self_audio_echo as _should_suppress_self_audio_echo,
+)
+from app_core.runtime_controller import (
     stream_and_chunk as _stream_and_chunk,
+)
+from app_core.runtime_controller import (
     transcribe_audio as _transcribe_audio,
+)
+from app_core.runtime_controller import (
     wake_rejection_guidance as _wake_rejection_guidance,
+)
+from app_core.runtime_controller import (
     wake_rejection_response as _wake_rejection_response,
+)
+from app_core.runtime_controller import (
     window_active as _window_active,
 )
 from audio_handler import AudioHandler, MacOSTTS
@@ -25,6 +44,21 @@ from llm_router import HybridRouter
 from memory_manager import MemoryManager
 from ollama_client import OllamaClient
 from terminal_ui import TerminalUI
+
+# Preserve test-facing compatibility shims for helper-level imports from `main`.
+_EXPORTED_HELPERS = (
+    _bootstrap_connection,
+    _capture_audio,
+    _cooldown_active,
+    _process_transcript_turn,
+    _remaining_window,
+    _should_suppress_self_audio_echo,
+    _stream_and_chunk,
+    _transcribe_audio,
+    _wake_rejection_guidance,
+    _wake_rejection_response,
+    _window_active,
+)
 
 
 def parse_args() -> argparse.Namespace:

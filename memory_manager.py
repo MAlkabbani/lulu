@@ -218,10 +218,15 @@ class MemoryManager:
         if not clean_query or self.collection.count() == 0:
             return []
 
+        requested_results = k or self.settings.top_k_memories
+        query_limit = min(
+            self.collection.count(),
+            max(requested_results * 4, self.settings.memory_dedup_query_k * 4),
+        )
         embedding = self.model_client.embed_text(clean_query)
         result = self.collection.query(
             query_embeddings=[embedding],
-            n_results=k or self.settings.top_k_memories,
+            n_results=query_limit,
             include=["documents", "distances", "metadatas"],
         )
 
@@ -245,7 +250,7 @@ class MemoryManager:
                     metadata=metadata or {},
                 )
             )
-        return self._current_revision_hits(hits)
+        return self._current_revision_hits(hits)[:requested_results]
 
     def list_recent_memories(self, limit: int) -> list[MemoryHit]:
         if limit < 1 or self.collection.count() == 0:

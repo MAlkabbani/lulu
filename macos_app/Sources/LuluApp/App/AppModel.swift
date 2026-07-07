@@ -191,12 +191,25 @@ final class AppModel: ObservableObject {
             return
         }
 
+        let selectedOutputDir = pdfDraft.outputDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !selectedOutputDir.isEmpty {
+            do {
+                try await persistPDFExportRootIfNeeded(selectedOutputDir)
+            } catch {
+                pdfWorkflowBusy = false
+                pdfStatusMessage = "Could not save export root: \(error.localizedDescription)"
+                appendEvent("PDF export root save failed: \(error.localizedDescription)")
+                return
+            }
+        }
+
         let request = pdfDraft.createRequest
         guard !request.pdfPath.isEmpty else {
             pdfStatusMessage = "Choose a PDF file before starting a job."
             return
         }
-        guard !request.outputDir.isEmpty else {
+        let effectiveOutputDir = request.outputDir ?? settings?.exportsPath ?? ""
+        guard !effectiveOutputDir.isEmpty else {
             pdfStatusMessage = "Choose an export destination before starting a job."
             return
         }
@@ -293,6 +306,12 @@ final class AppModel: ObservableObject {
             actionSummary = event.payload["action_summary"]?.stringValue ?? actionSummary
             currentToolStatus = event.payload["current_tool_status"]?.stringValue ?? currentToolStatus
             appendEvent(invocationSummary)
+        case "tool.activity":
+            actionSummary = event.payload["action_summary"]?.stringValue ?? actionSummary
+            currentToolStatus = event.payload["current_tool_status"]?.stringValue ?? currentToolStatus
+            if let detail = event.payload["detail"]?.stringValue {
+                appendEvent(detail)
+            }
         case "wake.guidance_updated":
             wakeGuidance = event.payload["guidance"]?.stringValue ?? wakeGuidance
         case "wake.signal_metrics":
@@ -432,6 +451,23 @@ final class AppModel: ObservableObject {
         if eventLog.count > 100 {
             eventLog.removeFirst(eventLog.count - 100)
         }
+    }
+
+    private func persistPDFExportRootIfNeeded(_ outputDir: String) async throws {
+        let normalizedOutputDir = outputDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedOutputDir.isEmpty else {
+            return
+        }
+        if settings?.exportsPath == normalizedOutputDir {
+            return
+        }
+        var updatedDraft = settingsDraft
+        updatedDraft.exportsPath = normalizedOutputDir
+        _ = try await backend.saveSettings(updatedDraft)
+        let refreshedSettings = try await backend.fetchSettings()
+        settings = refreshedSettings
+        settingsDraft = SettingsDraft(from: refreshedSettings)
+        pdfDraft.outputDir = refreshedSettings.exportsPath
     }
 
     private func applyDefaultPDFOutputDirectory(from settings: SettingsResponse) {

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from collections import Counter
-from collections import deque
-from dataclasses import dataclass, field
 import threading
+from collections import Counter, deque
+from dataclasses import dataclass, field
 from time import perf_counter
 
 from rich.columns import Columns
-from rich.console import Console
-from rich.console import Group
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
@@ -16,6 +14,7 @@ from rich.text import Text
 
 from app_core.runtime_models import RuntimeEvent
 from config import Settings, build_wake_guidance
+
 
 @dataclass
 class UIState:
@@ -238,13 +237,19 @@ class TerminalUI:
     def record_playback_gap(self) -> None:
         with self._state_lock:
             self.state.playback_gap_count += 1
-            self.log_event("Playback buffer ran low; waiting on the next streamed chunk.", refresh=False)
+            self.log_event(
+                "Playback buffer ran low; waiting on the next streamed chunk.",
+                refresh=False,
+            )
             self._refresh_locked()
 
     def record_tail_merge(self) -> None:
         with self._state_lock:
             self.state.tail_merge_count += 1
-            self.log_event("Merged a short trailing speech tail into the previous chunk.", refresh=False)
+            self.log_event(
+                "Merged a short trailing speech tail into the previous chunk.",
+                refresh=False,
+            )
             self._refresh_locked()
 
     def set_conversation_window_remaining(self, seconds: float | None) -> None:
@@ -478,7 +483,10 @@ class TerminalUI:
         table.add_row(
             "Chunks",
             Text(
-                f"{self.state.spoken_chunk_count}/{self.state.emitted_chunk_count} (queue {queue_backlog})",
+                (
+                    f"{self.state.spoken_chunk_count}/"
+                    f"{self.state.emitted_chunk_count} (queue {queue_backlog})"
+                ),
                 style="bold green" if queue_backlog == 0 else "bold yellow",
             ),
         )
@@ -492,7 +500,10 @@ class TerminalUI:
         table.add_row(
             "Continuity",
             Text(
-                f"tail merges {self.state.tail_merge_count}, buffer gaps {self.state.playback_gap_count}",
+                (
+                    f"tail merges {self.state.tail_merge_count}, "
+                    f"buffer gaps {self.state.playback_gap_count}"
+                ),
                 style="bright_yellow"
                 if self.state.playback_gap_count
                 else "green",
@@ -687,7 +698,10 @@ class TerminalUI:
             "model_tool_call": ("AUTO ACTION", "bold green"),
             "chat_only": ("ANSWER ONLY", "bold cyan"),
         }
-        label, style = labels.get(self.state.invocation_path, (self.state.invocation_path, "bold white"))
+        label, style = labels.get(
+            self.state.invocation_path,
+            (self.state.invocation_path, "bold white"),
+        )
         return Text(label, style=style)
 
     def _tool_status_text(self) -> Text:

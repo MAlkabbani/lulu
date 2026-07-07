@@ -299,12 +299,12 @@ command_exists curl || die "curl is required."
 
 log "INFO" "Validating required Homebrew formulas."
 run_cmd brew update
-ensure_brew_formula "python@3.12"
+ensure_brew_formula "python@3.14"
 ensure_brew_formula "portaudio"
 ensure_brew_formula "ffmpeg"
 ensure_brew_formula "ollama"
 
-command_exists python3.12 || die "python3.12 was not found after installation."
+command_exists python3.14 || die "python3.14 was not found after installation."
 command_exists ffmpeg || die "ffmpeg was not found after installation."
 
 restore_file_if_missing "${ENV_EXAMPLE}" "${ENV_FILE}"
@@ -313,7 +313,7 @@ load_env_file
 if [[ -d "${VENV_DIR}" ]]; then
   log "INFO" "Reusing existing virtual environment at ${VENV_DIR}"
 else
-  run_cmd python3.12 -m venv "${VENV_DIR}"
+  run_cmd python3.14 -m venv "${VENV_DIR}"
   add_rollback "remove_path" "${VENV_DIR}"
 fi
 

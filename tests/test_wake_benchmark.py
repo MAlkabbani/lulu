@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
-
 from audio_handler import AudioHandler
 from config import Settings
 from wake_benchmark import build_synthetic_wake_corpus, run_synthetic_wake_benchmark
@@ -27,6 +25,17 @@ def test_synthetic_corpus_contains_100_plus_samples() -> None:
     assert len(corpus) >= 100
     assert any(sample.expected_match for sample in corpus)
     assert any(not sample.expected_match for sample in corpus)
+    assert any(
+        sample.transcript == "i love music" and not sample.expected_match
+        for sample in corpus
+    )
+    assert any(
+        sample.transcript == "he looks busy" and not sample.expected_match
+        for sample in corpus
+    )
+    assert any(
+        sample.transcript == "hey hello there" and not sample.expected_match for sample in corpus
+    )
 
 
 def test_wake_audio_analysis_extracts_real_time_features() -> None:

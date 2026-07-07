@@ -1,28 +1,43 @@
 import Foundation
 
+enum BackendLaunchMode: String {
+    case preview = "preview"
+    case packaged = "packaged"
+}
+
 struct BackendConfiguration {
-    let repoRoot: URL
+    let launchMode: BackendLaunchMode
+    let backendRoot: URL
     let virtualEnvPath: URL
     let pythonExecutable: URL
+    let pathMode: String
+    let appSupportDirectory: URL?
     let host: String
     let launchToken: String
     let startupNonce: String
     let startupContractVersion: String
 
     static func `default`() -> BackendConfiguration {
-        let packageDirectory = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // Services
-            .deletingLastPathComponent() // LuluApp
-            .deletingLastPathComponent() // Sources
-            .deletingLastPathComponent() // macos_app
-        let repoRoot = packageDirectory.deletingLastPathComponent()
-        let virtualEnvPath = repoRoot.appendingPathComponent(".venv")
         let environment = ProcessInfo.processInfo.environment
+        let launchMode = resolveLaunchMode(environment: environment)
+        let backendRoot = resolveBackendRoot(launchMode: launchMode, environment: environment)
+        let virtualEnvPath = resolveVirtualEnvPath(
+            launchMode: launchMode,
+            backendRoot: backendRoot,
+            environment: environment
+        )
+        let appSupportDirectory = resolveAppSupportDirectory(
+            launchMode: launchMode,
+            environment: environment
+        )
         let token = ProcessInfo.processInfo.environment["LULU_DESKTOP_LAUNCH_TOKEN"] ?? UUID().uuidString
         return BackendConfiguration(
-            repoRoot: repoRoot,
+            launchMode: launchMode,
+            backendRoot: backendRoot,
             virtualEnvPath: virtualEnvPath,
-            pythonExecutable: resolvePythonExecutable(repoRoot: repoRoot, virtualEnvPath: virtualEnvPath),
+            pythonExecutable: resolvePythonExecutable(backendRoot: backendRoot, virtualEnvPath: virtualEnvPath),
+            pathMode: launchMode == .packaged ? "app_support" : "repo",
+            appSupportDirectory: appSupportDirectory,
             host: "127.0.0.1",
             launchToken: token,
             startupNonce: UUID().uuidString,
@@ -30,7 +45,77 @@ struct BackendConfiguration {
         )
     }
 
-    private static func resolvePythonExecutable(repoRoot: URL, virtualEnvPath: URL) -> URL {
+    private static func resolveLaunchMode(environment: [String: String]) -> BackendLaunchMode {
+        if let raw = environment["LULU_DESKTOP_LAUNCH_MODE"]?.lowercased() {
+            return raw == BackendLaunchMode.packaged.rawValue ? .packaged : .preview
+        }
+        let packagedBackendRoot = Bundle.main.resourceURL?.appendingPathComponent("backend")
+        if let packagedBackendRoot, FileManager.default.fileExists(atPath: packagedBackendRoot.path) {
+            return .packaged
+        }
+        return .preview
+    }
+
+    private static func resolveBackendRoot(
+        launchMode: BackendLaunchMode,
+        environment: [String: String]
+    ) -> URL {
+        if let override = environment["LULU_DESKTOP_BACKEND_ROOT"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
+        switch launchMode {
+        case .preview:
+            let packageDirectory = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Services
+                .deletingLastPathComponent() // LuluApp
+                .deletingLastPathComponent() // Sources
+                .deletingLastPathComponent() // macos_app
+            return packageDirectory.deletingLastPathComponent()
+        case .packaged:
+            if let resourceURL = Bundle.main.resourceURL {
+                return resourceURL.appendingPathComponent("backend")
+            }
+            return URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+        }
+    }
+
+    private static func resolveVirtualEnvPath(
+        launchMode: BackendLaunchMode,
+        backendRoot: URL,
+        environment: [String: String]
+    ) -> URL {
+        if let override = environment["LULU_DESKTOP_VENV"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
+        switch launchMode {
+        case .preview:
+            return backendRoot.appendingPathComponent(".venv")
+        case .packaged:
+            return backendRoot.appendingPathComponent(".venv")
+        }
+    }
+
+    private static func resolveAppSupportDirectory(
+        launchMode: BackendLaunchMode,
+        environment: [String: String]
+    ) -> URL? {
+        if let override = environment["LULU_APP_SUPPORT_DIR"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
+        guard launchMode == .packaged else {
+            return nil
+        }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("Lulu", isDirectory: true)
+    }
+
+    private static func resolvePythonExecutable(backendRoot: URL, virtualEnvPath: URL) -> URL {
         let environment = ProcessInfo.processInfo.environment
         if let override = environment["LULU_DESKTOP_PYTHON"], !override.isEmpty {
             return URL(fileURLWithPath: override)
@@ -66,7 +151,11 @@ struct BackendConfiguration {
             return candidate
         }
 
-        return virtualEnvPath.appendingPathComponent("bin/python")
+        let fallback = virtualEnvPath.appendingPathComponent("bin/python")
+        if FileManager.default.isExecutableFile(atPath: fallback.path) {
+            return fallback
+        }
+        return backendRoot.appendingPathComponent(".venv/bin/python")
     }
 
     private static func parseConfigValue(_ key: String, from configText: String) -> String? {

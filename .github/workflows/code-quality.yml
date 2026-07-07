@@ -6,18 +6,22 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   python-quality:
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.14"
 
@@ -26,27 +30,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Collect changed Python files
-        id: changed-python
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-            files=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- '*.py')
-          else
-            files=$(git diff --name-only --diff-filter=ACMR "${{ github.event.before }}...${{ github.sha }}" -- '*.py')
-          fi
-
-          if [ -z "$files" ]; then
-            echo "has_files=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          printf '%s\n' "$files" > changed-python-files.txt
-          echo "has_files=true" >> "$GITHUB_OUTPUT"
-
       - name: Run Ruff
-        if: steps.changed-python.outputs.has_files == 'true'
-        run: xargs -0 ruff check < <(tr '\n' '\0' < changed-python-files.txt)
+        run: ruff check .
 
       - name: Run focused pytest suites
         env:
@@ -60,4 +45,31 @@ jobs:
             tests/test_streaming_tts.py \
             tests/test_audio_handler.py \
             tests/test_dependency_health.py \
-            tests/test_memory_manager.py
+            tests/test_memory_manager.py \
+            tests/test_runtime_controller.py \
+            tests/test_continuous_listening.py \
+            tests/test_runtime_resilience.py \
+            tests/test_app_paths.py
+
+      - name: Validate shell scripts
+        run: bash -n scripts/install_lulu.sh scripts/start_lulu.sh
+
+  swift-source-validation:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Type-check Swift sources
+        run: |
+          cd macos_app
+          swiftc -typecheck Sources/LuluApp/App/*.swift \
+            Sources/LuluApp/Features/Assistant/*.swift \
+            Sources/LuluApp/Features/Diagnostics/*.swift \
+            Sources/LuluApp/Features/PDFAudiobooks/*.swift \
+            Sources/LuluApp/Features/Settings/*.swift \
+            Sources/LuluApp/Models/*.swift \
+            Sources/LuluApp/Services/*.swift

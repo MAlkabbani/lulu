@@ -91,6 +91,7 @@ struct SettingsUpdateRequest: Encodable {
     let embeddingModel: String
     let whisperModel: String
     let whisperLanguage: String
+    let exportsPath: String
     let wakePhrase: String
     let practicalVoiceMode: Bool
 
@@ -99,6 +100,7 @@ struct SettingsUpdateRequest: Encodable {
         case embeddingModel = "embedding_model"
         case whisperModel = "whisper_model"
         case whisperLanguage = "whisper_language"
+        case exportsPath = "exports_path"
         case wakePhrase = "wake_phrase"
         case practicalVoiceMode = "practical_voice_mode"
     }
@@ -316,7 +318,7 @@ struct RuntimeEventEnvelope: Decodable, Sendable {
 
 struct PDFJobCreateRequest: Encodable {
     let pdfPath: String
-    let outputDir: String
+    let outputDir: String?
     let title: String?
     let author: String?
     let genre: String?
@@ -379,7 +381,7 @@ struct PDFJobDraft {
     var createRequest: PDFJobCreateRequest {
         PDFJobCreateRequest(
             pdfPath: pdfPath.trimmingCharacters(in: .whitespacesAndNewlines),
-            outputDir: outputDir.trimmingCharacters(in: .whitespacesAndNewlines),
+            outputDir: normalizedOptional(outputDir),
             title: normalizedOptional(title),
             author: normalizedOptional(author),
             genre: normalizedOptional(genre),
@@ -402,6 +404,7 @@ struct SettingsDraft {
     var embeddingModel: String = ""
     var whisperModel: String = ""
     var whisperLanguage: String = ""
+    var exportsPath: String = ""
     var wakePhrase: String = ""
     var practicalVoiceMode: Bool = true
 
@@ -412,6 +415,7 @@ struct SettingsDraft {
         embeddingModel = response.embeddingModel
         whisperModel = response.whisperModel
         whisperLanguage = response.whisperLanguage
+        exportsPath = response.exportsPath
         wakePhrase = response.wakePhrase
         practicalVoiceMode = response.practicalVoiceMode
     }
@@ -422,6 +426,7 @@ struct SettingsDraft {
             embeddingModel: embeddingModel,
             whisperModel: whisperModel,
             whisperLanguage: whisperLanguage,
+            exportsPath: exportsPath,
             wakePhrase: wakePhrase,
             practicalVoiceMode: practicalVoiceMode
         )

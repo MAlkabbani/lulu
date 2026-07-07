@@ -205,6 +205,39 @@ def test_runtime_diagnostics_endpoint_returns_snapshot_payload(tmp_path: Path) -
     assert body["recent_saves"] == ["remembered birthday"]
 
 
+def test_runtime_restart_returns_visible_runtime_error_state(tmp_path: Path) -> None:
+    class StuckController(FakeController):
+        def restart_runtime(self, mode: str | None = None) -> RuntimeSnapshot:
+            runtime_mode = mode or self._state.runtime_mode
+            self._state = RuntimeSnapshot(
+                mode="runtime_error",
+                runtime_mode=runtime_mode,
+                status_line="Runtime stop timed out; background voice worker is still running.",
+                degraded=True,
+                last_error="Runtime stop timed out; background voice worker is still running.",
+            )
+            return self._state
+
+    app = build_service_app(
+        StuckController(tmp_path),
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/runtime/restart",
+        headers=auth_headers(),
+        json={"mode": "continuous"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "runtime_error"
+    assert body["degraded"] is True
+    assert "still running" in body["last_error"]
+
+
 def test_websocket_stream_serializes_runtime_events(tmp_path: Path) -> None:
     controller = FakeController(tmp_path)
     app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
@@ -325,3 +358,20 @@ def test_update_settings_preserves_existing_keys_and_creates_backup(tmp_path: Pa
         controller.settings.config_path.parent / f"{controller.settings.config_path.name}.bak"
     )
     assert backup_path.exists()
+
+
+def test_update_settings_normalizes_exports_path(tmp_path: Path) -> None:
+    controller = FakeController(tmp_path)
+    app = build_service_app(controller, launch_token="test-token", enforce_loopback=False)
+    client = TestClient(app)
+    export_root = tmp_path / "custom-exports"
+
+    response = client.put(
+        "/v1/settings",
+        headers=auth_headers(),
+        json={"exports_path": str(export_root)},
+    )
+
+    assert response.status_code == 200
+    persisted = json.loads(controller.settings.config_path.read_text(encoding="utf-8"))
+    assert persisted["exports_path"] == str(export_root.resolve())

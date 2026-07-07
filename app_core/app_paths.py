@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 APP_NAME = "Lulu"
 PATH_MODE_ENV = "LULU_PATH_MODE"
 CONFIG_PATH_ENV = "LULU_CONFIG_PATH"

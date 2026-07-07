@@ -29,6 +29,7 @@ from backend_service.api_models import (
 )
 from backend_service.auth import require_http_auth, require_websocket_auth
 from backend_service.websocket_events import WebSocketEventBridge
+from config import Settings
 from pdf_audiobook import ServiceJobResult, run_service_job
 
 PdfJobRunner = Callable[[str, PDFJobRequest, Callable[[str], None]], ServiceJobResult]
@@ -159,6 +160,75 @@ def default_pdf_job_runner(
     return result
 
 
+def _normalize_directory_path(path_text: str, *, field_name: str) -> Path:
+    candidate = Path(path_text).expanduser()
+    try:
+        resolved = candidate.resolve()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{field_name} could not be resolved: {path_text}.",
+        ) from exc
+    if resolved.exists() and not resolved.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{field_name} must be a directory path: {resolved}.",
+        )
+    return resolved
+
+
+def _require_path_within_root(candidate: Path, *, root: Path, field_name: str) -> Path:
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{field_name} must stay within the trusted export root: {root}.",
+        ) from exc
+    return candidate
+
+
+def _normalized_exports_root(settings: Settings) -> Path:
+    return _normalize_directory_path(str(settings.exports_path), field_name="exports_path")
+
+
+def _normalize_pdf_job_request(
+    payload: PDFJobRequest,
+    *,
+    settings: Settings,
+) -> PDFJobRequest:
+    trusted_root = _normalized_exports_root(settings)
+    output_dir = payload.output_dir or str(trusted_root)
+    normalized_output_dir = _normalize_directory_path(output_dir, field_name="output_dir")
+    _require_path_within_root(
+        normalized_output_dir,
+        root=trusted_root,
+        field_name="output_dir",
+    )
+    return payload.model_copy(update={"output_dir": str(normalized_output_dir)})
+
+
+def _normalize_settings_updates(
+    updates: dict[str, object],
+    *,
+    settings: Settings,
+) -> dict[str, object]:
+    normalized = dict(updates)
+    if "exports_path" in normalized:
+        exports_path = normalized["exports_path"]
+        if not isinstance(exports_path, str) or not exports_path.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="exports_path must be a non-empty directory path.",
+            )
+        normalized["exports_path"] = str(
+            _normalize_directory_path(exports_path, field_name="exports_path")
+        )
+    else:
+        normalized["exports_path"] = str(_normalized_exports_root(settings))
+    return normalized
+
+
 def _load_existing_settings_strict(config_path: Path) -> dict[str, object]:
     if not config_path.exists():
         return {}
@@ -276,7 +346,10 @@ def build_service_app(
         config_path = controller.settings.config_path
         config_path.parent.mkdir(parents=True, exist_ok=True)
         existing = _load_existing_settings_strict(config_path)
-        updates = payload.model_dump(exclude_none=True)
+        updates = _normalize_settings_updates(
+            payload.model_dump(exclude_none=True),
+            settings=controller.settings,
+        )
         existing.update(updates)
         _persist_settings_atomically(config_path, existing)
         return SettingsUpdateResponse(
@@ -320,7 +393,9 @@ def build_service_app(
     @app.post("/v1/pdf-audiobook/jobs", response_model=PDFJobResponse)
     def create_pdf_job(request: Request, payload: PDFJobRequest) -> PDFJobResponse:
         authorize(request)
-        return job_store.create_job(payload)
+        return job_store.create_job(
+            _normalize_pdf_job_request(payload, settings=controller.settings)
+        )
 
     @app.get("/v1/pdf-audiobook/jobs/{job_id}", response_model=PDFJobResponse)
     def get_pdf_job(request: Request, job_id: str) -> PDFJobResponse:

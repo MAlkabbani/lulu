@@ -1,19 +1,19 @@
 from __future__ import annotations
 
+import threading
 from collections import deque
 from pathlib import Path
-import threading
+
 import numpy as np
 
+from app_core.runtime_controller import run_continuous_voice_loop
 from audio_handler import (
     AudioCaptureError,
     AudioHandler,
     AudioTranscriptionError,
-    WakeMatch,
     _resolve_input_device,
     text_similarity,
 )
-from app_core.runtime_controller import run_continuous_voice_loop
 from config import Settings
 from main import (
     _bootstrap_connection,
@@ -104,7 +104,9 @@ def test_transcribe_audio_sanitizes_audio_before_whisper(monkeypatch, tmp_path: 
     monkeypatch.setattr("audio_handler.transcribe", fake_transcribe)
     handler = AudioHandler(Settings(whisper_model=str(fake_model_dir)))
 
-    transcript = handler.transcribe_audio(np.array([np.nan, np.inf, -np.inf, 1.5, -1.5], dtype=np.float32))
+    transcript = handler.transcribe_audio(
+        np.array([np.nan, np.inf, -np.inf, 1.5, -1.5], dtype=np.float32)
+    )
 
     assert transcript == "sanitized"
     assert np.array_equal(
@@ -219,34 +221,31 @@ def test_match_wake_phrase_accepts_scored_whisper_confusion() -> None:
     assert result.score >= 0.86
 
 
-def test_match_wake_phrase_accepts_i_love_prefix_confusion() -> None:
+def test_match_wake_phrase_rejects_i_love_prefix_phrase() -> None:
     handler = AudioHandler(build_settings())
 
     result = handler.match_wake_phrase("I love what time it is")
 
-    assert result.matched is True
-    assert result.remainder == "what time it is"
-    assert result.score >= 0.86
+    assert result.matched is False
+    assert result.reason == "below-threshold"
 
 
-def test_match_wake_phrase_accepts_observed_hello_confusion() -> None:
+def test_match_wake_phrase_rejects_hello_phrase_without_lulu_tokens() -> None:
     handler = AudioHandler(build_settings())
 
     result = handler.match_wake_phrase("hey hello what's up")
 
-    assert result.matched is True
-    assert result.remainder == "what s up"
-    assert result.score >= 0.86
+    assert result.matched is False
+    assert result.reason == "below-threshold"
 
 
-def test_match_wake_phrase_accepts_observed_he_looks_confusion() -> None:
+def test_match_wake_phrase_rejects_he_looks_phrase() -> None:
     handler = AudioHandler(build_settings())
 
     result = handler.match_wake_phrase("he looks up")
 
-    assert result.matched is True
-    assert result.remainder == "up"
-    assert result.score >= 0.86
+    assert result.matched is False
+    assert result.reason == "below-threshold"
 
 
 def test_match_wake_phrase_accepts_leading_filler_before_wake_phrase() -> None:
@@ -476,7 +475,10 @@ def test_practical_voice_mode_keeps_wake_scan_in_stt_path_when_acoustic_gate_is_
             stop_event.set()
             return ""
 
-    monkeypatch.setattr("app_core.runtime_controller.capture_audio", lambda capture_fn, ui, event_bus=None: (capture_fn(), False))
+    monkeypatch.setattr(
+        "app_core.runtime_controller.capture_audio",
+        lambda capture_fn, ui, event_bus=None: (capture_fn(), False),
+    )
 
     stop_event = threading.Event()
 
@@ -493,7 +495,10 @@ def test_practical_voice_mode_keeps_wake_scan_in_stt_path_when_acoustic_gate_is_
 
     assert len(transcribed_audio) == 1
     assert np.array_equal(transcribed_audio[0], processed_audio)
-    assert any("practical voice mode kept the STT wake scan enabled" in event for event in ui.state.recent_events)
+    assert any(
+        "practical voice mode kept the STT wake scan enabled" in event
+        for event in ui.state.recent_events
+    )
 
 
 def test_wake_rejection_helpers_offer_practical_guidance() -> None:

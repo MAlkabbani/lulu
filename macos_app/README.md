@@ -26,9 +26,15 @@ The shell also now includes an initial `PDF Audiobooks` utility surface:
 - poll job status and show manifest/output paths plus progress lines
 - keep PDF workflow state separate from the live assistant runtime UI
 
-The desktop launcher prefers `127.0.0.1:8765` for local development, but if that port is already occupied by an older helper process it will choose a free loopback port for the new session instead of failing bootstrap.
+The desktop launcher now starts the backend helper on port `0`, waits for a nonce-validated startup record from the child process, and only then trusts the negotiated loopback port for authenticated HTTP and WebSocket traffic.
 
-Treat Stages 3 and 4 as complete for the current preview baseline. Full packaged-app entitlements, release signing, notarization, and distribution remain later stages. That later packaging stage must also handle clean-machine provisioning or first-launch remediation for optional PDF portable-export dependencies such as `ffmpeg`; the current repo-local installer already automates that dependency for checkout-based installs.
+Treat Stages 3 and 4 as complete for the current preview baseline. Stage 5 packaging-readiness is now in progress:
+
+- preview mode remains the supported repo-checkout workflow and expects a repo-local `.venv`
+- packaged mode is being prepared as a distinct bootstrap path with app-support-backed runtime state
+- both launch modes must preserve the same nonce-validated startup contract and header-only bearer auth
+- full packaged-app entitlements, release signing, notarization, and distribution still remain later release-stage work
+- clean-machine packaged installs must still handle optional PDF portable-export dependencies such as `ffmpeg`; the current repo-local installer already automates that dependency for checkout-based installs
 
 ## Structure
 

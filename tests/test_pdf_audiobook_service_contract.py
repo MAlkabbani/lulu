@@ -210,6 +210,60 @@ def test_pdf_job_reports_failure_for_encrypted_pdf(tmp_path: Path) -> None:
     assert "Encrypted PDFs are not supported" in payload["error"]
 
 
+def test_pdf_job_defaults_to_trusted_export_root_when_output_dir_omitted(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "book.pdf"
+    write_text_pdf(pdf_path, "Chapter 1 Hello from Lulu PDF service.")
+    controller = FakeController(tmp_path)
+    app = build_service_app(
+        controller,
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
+    client = TestClient(app)
+
+    create = client.post(
+        "/v1/pdf-audiobook/jobs",
+        headers=auth_headers(),
+        json={
+            "pdf_path": str(pdf_path),
+            "dry_run": True,
+            "portable_format": "none",
+        },
+    )
+
+    assert create.status_code == 200
+    payload = wait_for_job(client, create.json()["job_id"])
+    assert payload["status"] == "completed"
+    assert payload["output_dir"] is not None
+    assert Path(payload["output_dir"]).is_relative_to(controller.settings.exports_path.resolve())
+
+
+def test_pdf_job_rejects_output_directory_outside_trusted_export_root(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "book.pdf"
+    write_text_pdf(pdf_path, "Chapter 1 Hello from Lulu PDF service.")
+    controller = FakeController(tmp_path)
+    app = build_service_app(
+        controller,
+        launch_token="test-token",
+        enforce_loopback=False,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/pdf-audiobook/jobs",
+        headers=auth_headers(),
+        json={
+            "pdf_path": str(pdf_path),
+            "output_dir": str(tmp_path / "outside-root"),
+            "dry_run": True,
+            "portable_format": "none",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "trusted export root" in response.text
+
+
 def test_pdf_job_rejects_when_queue_is_full(tmp_path: Path) -> None:
     blocker = threading.Event()
 

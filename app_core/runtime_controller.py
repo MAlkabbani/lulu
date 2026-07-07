@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from collections import deque
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from time import perf_counter, sleep
 
 from app_core.dependency_health import probe_dependency_health
@@ -23,6 +24,12 @@ from llm_router import HybridRouter
 from memory_manager import MemoryManager
 from ollama_client import OllamaClient, OllamaClientError
 from terminal_ui import TerminalUI
+
+
+@dataclass(frozen=True)
+class RuntimeStopResult:
+    stopped_cleanly: bool
+    detail: str = ""
 
 
 class RuntimeController:
@@ -173,7 +180,11 @@ class RuntimeController:
         if not self._bootstrapped and not self.bootstrap():
             self.snapshot = self.get_state()
             return self.snapshot
-        self._stop_background_runtime()
+        stop_result = self._stop_background_runtime()
+        if not stop_result.stopped_cleanly:
+            self._report_runtime_stop_failure(stop_result.detail)
+            self.snapshot = self.get_state()
+            return self.snapshot
         if not self._ensure_voice_runtime_ready():
             self.snapshot = self.get_state()
             return self.snapshot
@@ -183,7 +194,11 @@ class RuntimeController:
         return self.snapshot
 
     def stop_runtime(self) -> RuntimeSnapshot:
-        self._stop_background_runtime()
+        stop_result = self._stop_background_runtime()
+        if not stop_result.stopped_cleanly:
+            self._report_runtime_stop_failure(stop_result.detail)
+            self.snapshot = self.get_state()
+            return self.snapshot
         set_conversation_window_remaining(self.ui, None, event_bus=self.event_bus)
         set_cooldown_remaining(self.ui, None, event_bus=self.event_bus)
         set_ui_mode(self.ui, "idle", "Runtime stopped.", event_bus=self.event_bus)
@@ -206,15 +221,29 @@ class RuntimeController:
         self._runtime_thread = worker
         worker.start()
 
-    def _stop_background_runtime(self) -> None:
+    def _stop_background_runtime(self) -> RuntimeStopResult:
         stop_event = self._runtime_stop_event
         worker = self._runtime_thread
-        if stop_event is not None:
-            stop_event.set()
-        if worker is not None and worker.is_alive():
+        if stop_event is None or worker is None:
+            self._runtime_stop_event = None
+            self._runtime_thread = None
+            return RuntimeStopResult(stopped_cleanly=True)
+        stop_event.set()
+        if worker.is_alive():
             worker.join(timeout=1.0)
+        if worker.is_alive():
+            detail = (
+                "Runtime stop timed out; background voice worker is still running. "
+                "Wait for the current audio turn to finish before restarting."
+            )
+            return RuntimeStopResult(stopped_cleanly=False, detail=detail)
         self._runtime_stop_event = None
         self._runtime_thread = None
+        return RuntimeStopResult(stopped_cleanly=True)
+
+    def _report_runtime_stop_failure(self, detail: str) -> None:
+        self.ui.show_dependency_error("runtime_error", detail)
+        publish_runtime_state(self.ui, self.event_bus)
 
     def _ensure_voice_runtime_ready(self) -> bool:
         try:
@@ -1024,10 +1053,23 @@ def process_transcript_turn(
                 invocation_path=prepared.invocation_path,
                 invocation_summary=prepared.invocation_summary,
                 memory_hit_count=len(prepared.memory_hits),
+                action_summary=ui.state.action_summary,
+                current_tool_status=ui.state.current_tool_status,
             )
         )
     for trace in prepared.tool_traces:
         ui.record_tool_activity(trace.tool_name, trace.stage, trace.detail)
+        if event_bus is not None:
+            event_bus.publish(
+                make_event(
+                    "tool.activity",
+                    tool_name=trace.tool_name,
+                    stage=trace.stage,
+                    detail=trace.detail,
+                    action_summary=ui.state.action_summary,
+                    current_tool_status=ui.state.current_tool_status,
+                )
+            )
     if prepared.saved_items:
         ui.add_saved_items(prepared.saved_items)
         if event_bus is not None:
